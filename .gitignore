@@ -1,0 +1,47 @@
+# Environment variables
+.env
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Project-specific
+component_results/*
+!component_results/.gitkeep
+
+test_results/*
+!test_results/.gitkeep
+
+stock_screener/data/results/*
+!stock_screener/data/results/.gitkeep
+
+*.log 
