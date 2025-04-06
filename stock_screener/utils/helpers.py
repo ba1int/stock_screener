@@ -57,21 +57,38 @@ class NumpyJSONEncoder(json.JSONEncoder):
 
 
 def save_json(filename_prefix: str, data: Any, logger: logging.Logger) -> None:
-    """Save data to a JSON file in the results directory.
+    """Save data to a JSON file in the results directory, handling numpy types."""
 
-    Args:
-        filename_prefix: Prefix for the filename (e.g., 'selected_tickers').
-        data: The data to save (should be JSON serializable).
-        logger: Logger instance.
-    """
+    def convert_numpy_types(obj):
+        """Recursively convert numpy types to standard Python types."""
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            # Handle potential NaN/Inf values
+            if np.isnan(obj):
+                return None # Represent NaN as null in JSON
+            elif np.isinf(obj):
+                # Represent Inf as a large number string or None
+                return str(obj) # Or None, depending on preference
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {k: convert_numpy_types(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_numpy_types(i) for i in obj]
+        return obj
+
     timestamp_str = datetime.now().strftime("%Y-%m-%d")
     output_filename = f"{filename_prefix}_{timestamp_str}.json"
     output_path = settings.RESULTS_DIR / output_filename
 
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Convert data before saving
+        converted_data = convert_numpy_types(data)
         with open(output_path, "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(converted_data, f, indent=4)
         logger.info(f"Data saved to {output_path}")
     except TypeError as e:
         logger.error(f"Error: Data is not JSON serializable for {output_filename}. {e}")
@@ -172,14 +189,26 @@ def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
 
                 f.write("\n")
 
-                # Recent news
-                f.write("### Recent News\n")
-                news_summary = stock.get("news_summary", "No recent news found.")
-                f.write(news_summary + "\n")
+                # Options Sentiment
+                f.write("### Options Sentiment\n")
+                options_metrics = stock.get("options_metrics")
+                if options_metrics and not options_metrics.get("error"):
+                    expiry = options_metrics.get("selected_expiry", "N/A")
+                    pc_vol = options_metrics.get("pc_volume_ratio", "N/A")
+                    pc_oi = options_metrics.get("pc_oi_ratio", "N/A")
+                    avg_iv = options_metrics.get("average_iv", "N/A")
+                    iv_str = f"{avg_iv * 100:.1f}%" if isinstance(avg_iv, float) else "N/A"
+
+                    f.write(f"- Near-Term Expiry: {expiry}\n")
+                    f.write(f"- P/C Volume Ratio: {pc_vol}\n")
+                    f.write(f"- P/C Open Interest Ratio: {pc_oi}\n")
+                    f.write(f"- Average IV: {iv_str}\n")
+                else:
+                    f.write("No options data available or error.\n")
                 f.write("\n")
 
                 # Analysis
-                f.write("### Analysis\n")
+                f.write("### AI Analysis\n")
                 if "analysis" in stock:
                     f.write("```\n")
                     f.write(stock["analysis"])

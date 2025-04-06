@@ -5,7 +5,7 @@ Module for screening stocks based on financial metrics.
 import logging
 import time
 from typing import List, Dict, Any, Tuple
-from .simple_yahoo import get_penny_stocks, get_stock_data, get_stock_news
+from .simple_yahoo import get_penny_stocks, get_stock_data, get_options_metrics
 # from .newsapi_fetcher import get_stock_news # Keep this if you want NewsAPI as primary/fallback
 import yfinance as yf
 from ..utils.helpers import save_json # Import save_json
@@ -78,20 +78,20 @@ def screen_penny_stocks(
         top_stocks = screened_stocks[:max_stocks]
         logger.info(f"Selected top {len(top_stocks)} stocks for analysis.")
 
-        # --- Fetch News ONLY for Top Stocks --- #
-        logger.info(f"Fetching news summaries for top {len(top_stocks)} stocks...")
+        # --- Fetch Options Metrics ONLY for Top Stocks --- #
+        logger.info(f"Fetching options metrics for top {len(top_stocks)} stocks...")
         for stock in top_stocks:
             ticker = stock.get("ticker")
             if ticker:
                 try:
-                    stock["news_summary"] = get_stock_news(ticker)
-                    time.sleep(0.3) # Small delay between news requests
+                    stock["options_metrics"] = get_options_metrics(ticker)
+                    time.sleep(0.3) # Small delay between requests
                 except Exception as e:
-                     logger.error(f"Failed to get news for top stock {ticker}: {e}")
-                     stock["news_summary"] = "Error fetching news."
+                     logger.error(f"Failed to get options metrics for top stock {ticker}: {e}")
+                     stock["options_metrics"] = {"error": "Error fetching options metrics."}
             else:
-                 stock["news_summary"] = "Ticker not found for news fetching."
-        # --------------------------------------- #
+                 stock["options_metrics"] = {"error": "Ticker not found for options fetching."}
+        # ------------------------------------------ #
 
         elapsed_time = time.time() - start_time
         logger.info(
@@ -102,7 +102,7 @@ def screen_penny_stocks(
         # save_json("news_data", news_data, logger) # Remove this - news is now in top_stocks
         save_json(
             "selected_tickers", top_stocks, logger
-        )  # Save top_stocks which now include news
+        )  # Save top_stocks which now include options metrics
 
         return top_stocks
 
@@ -163,12 +163,35 @@ def calculate_stock_score(stock_data: Dict[str, Any]) -> float:
         else:
              logger.debug(f"No P/E for {stock_data.get('ticker')} scoring")
 
-        # Consider adding more criteria (e.g., EPS growth, Beta, Sector trends) if data is available
+        # Options Sentiment (Put/Call Ratios) - Max 10 points, Min -5
+        options_metrics = stock_data.get("options_metrics")
+        if options_metrics and not options_metrics.get("error"):
+            pc_oi_ratio = options_metrics.get("pc_oi_ratio")
+            pc_vol_ratio = options_metrics.get("pc_volume_ratio")
+
+            # Use OI ratio primarily, fallback to Volume ratio if OI is missing
+            ratio_to_use = pc_oi_ratio if pc_oi_ratio is not None else pc_vol_ratio
+
+            if ratio_to_use is not None:
+                if ratio_to_use < 0.7:
+                    score += 10 # Bullish
+                elif ratio_to_use < 0.9:
+                    score += 5 # Slightly Bullish / Neutral
+                elif ratio_to_use > 1.2:
+                    score -= 5 # Bearish
+                # Ratios between 0.9 and 1.2 are considered neutral, no score change
+                logger.debug(f"Options ratio score contribution for {stock_data.get('ticker')}: Ratio={ratio_to_use:.2f}")
+            else:
+                 logger.debug(f"No usable P/C ratio for {stock_data.get('ticker')}")
+        else:
+            logger.debug(f"No options metrics for {stock_data.get('ticker')}")
+
+        # Consider adding more criteria (e.g., EPS growth, Beta, Sector trends, IV level) if data is available
 
         # --- Normalization --- #
-        # Normalize the score to a 0-10 scale (adjust max_score based on criteria added)
-        # Example max_score if only Price(15), Volume(15), PE(10) are used = 40
-        max_score_used = 15 + 15 + 10 # Update this if criteria change
+        # Adjust max_score_used based on criteria added
+        # Max possible points: Price(15) + Volume(15) + PE(10) + Options(10) = 50
+        max_score_used = 15 + 15 + 10 + 10 # Update this if criteria change
 
         if max_score_used == 0:
              return 0 # Avoid division by zero

@@ -56,65 +56,83 @@ def format_stock_data(stock: Dict[str, Any]) -> str:
         Formatted string with stock data
     """
     try:
-        # Get core stock data
-        ticker = stock.get("ticker", "Unknown")
-        company_name = stock.get("company_name", "Unknown Company")
+        # Extract key data points, handle None gracefully
+        ticker = stock.get("ticker", "N/A")
+        company_name = stock.get("company_name", "N/A")
+        sector = stock.get("sector", "N/A")
+        industry = stock.get("industry", "N/A")
         price = stock.get("price", "N/A")
+        market_cap = stock.get("market_cap", "N/A")
+        volume = stock.get("volume", "N/A")
+        avg_volume = stock.get("avg_volume", "N/A")
+        pe_ratio = stock.get("pe_ratio", "N/A")
+        eps = stock.get("eps", "N/A")
+        beta = stock.get("beta", "N/A")
+        high_52w = stock.get("high_52w", "N/A")
+        low_52w = stock.get("low_52w", "N/A")
+        dividend_yield = stock.get("dividend_yield", "N/A")
+        description = stock.get("description", "N/A")
 
-        # Format the data
-        data = [
-            f"TICKER: {ticker}",
-            f"COMPANY: {company_name}",
-            f"PRICE: ${price}",
-        ]
+        # Format options metrics if available
+        options_metrics_str = "No options data available."
+        options_metrics = stock.get("options_metrics")
+        if options_metrics and not options_metrics.get("error"):
+            pc_vol = options_metrics.get("pc_volume_ratio", "N/A")
+            pc_oi = options_metrics.get("pc_oi_ratio", "N/A")
+            avg_iv = options_metrics.get("average_iv", "N/A")
+            if avg_iv != "N/A": avg_iv = f"{avg_iv * 100:.1f}%" # Format IV as percentage
+            options_metrics_str = (
+                f"Put/Call Vol Ratio: {pc_vol}, "
+                f"Put/Call OI Ratio: {pc_oi}, "
+                f"Avg Near-Term IV: {avg_iv}"
+            )
 
-        # Add other available data
-        for key, label in [
-            ("sector", "SECTOR"),
-            ("industry", "INDUSTRY"),
-            ("market_cap", "MARKET CAP"),
-            ("volume", "VOLUME"),
-            ("avg_volume", "AVG VOLUME"),
-            ("pe_ratio", "P/E RATIO"),
-            ("eps", "EPS"),
-            ("high_52w", "52-WEEK HIGH"),
-            ("low_52w", "52-WEEK LOW"),
-            ("beta", "BETA"),
-            ("dividend_yield", "DIVIDEND YIELD"),
-        ]:
-            if key in stock and stock[key] is not None:
-                value = stock[key]
+        # Format numbers for readability
+        if isinstance(market_cap, (int, float)):
+            if market_cap >= 1_000_000_000:
+                market_cap = f"${market_cap/1_000_000_000:.2f}B"
+            elif market_cap >= 1_000_000:
+                market_cap = f"${market_cap/1_000_000:.2f}M"
+            else:
+                market_cap = f"${market_cap:,.0f}"
+        elif isinstance(volume, (int, float)):
+            volume = f"{volume:,.0f}"
+        elif isinstance(avg_volume, (int, float)):
+            avg_volume = f"{avg_volume:,.0f}"
+        elif isinstance(pe_ratio, (int, float)):
+            pe_ratio = f"{pe_ratio:.2f}"
+        elif isinstance(eps, (int, float)):
+            eps = f"{eps:.2f}"
+        elif isinstance(beta, (int, float)):
+            beta = f"{beta:.2f}"
+        elif isinstance(dividend_yield, (int, float)):
+            dividend_yield = f"{dividend_yield:.2f}%"
 
-                # Format numbers
-                if (
-                    key == "market_cap"
-                    and isinstance(value, (int, float))
-                    and value > 0
-                ):
-                    if value >= 1_000_000_000:
-                        value = f"${value/1_000_000_000:.2f}B"
-                    elif value >= 1_000_000:
-                        value = f"${value/1_000_000:.2f}M"
-                    else:
-                        value = f"${value:,.0f}"
-                elif key in ("volume", "avg_volume") and isinstance(
-                    value, (int, float)
-                ):
-                    value = f"{value:,.0f}"
-                elif key in ("pe_ratio", "eps", "beta") and isinstance(
-                    value, (int, float)
-                ):
-                    value = f"{value:.2f}"
-                elif key == "dividend_yield" and isinstance(value, (int, float)):
-                    value = f"{value:.2f}%"
+        # Construct the formatted string
+        data_str = f"""
+Ticker: {ticker} ({company_name})
+Sector: {sector} | Industry: {industry}
 
-                data.append(f"{label}: {value}")
+Key Financials:
+Price: {price}
+Market Cap: {market_cap}
+P/E Ratio: {pe_ratio}
+EPS: {eps}
+Dividend Yield: {dividend_yield}
+Beta (Volatility): {beta}
+52-Week Range: {low_52w} - {high_52w}
 
-        # Add description if available
-        if "description" in stock and stock["description"]:
-            data.append(f"\nDESCRIPTION:\n{stock['description']}")
+Volume:
+Today's Volume: {volume}
+Average Volume: {avg_volume}
 
-        return "\n".join(data)
+Options Sentiment:
+{options_metrics_str}
+
+Company Description:
+{description}
+"""
+        return data_str.strip()
 
     except Exception as e:
         logger.error(f"Error formatting stock data: {e}")
@@ -158,6 +176,8 @@ Note: Focus on the data available - don't analyze metrics not provided
 
 IMPORTANT: Be extremely concise. Use short sentences. Avoid lengthy explanations. 
 Max 400 words.
+
+CRITICAL: Analyze the provided Options Sentiment data (Put/Call Ratios, Avg IV) and incorporate its implications into your overall analysis and recommendation.
 """
 
         # Call GPT-4o-mini with increased max_tokens to ensure complete output
