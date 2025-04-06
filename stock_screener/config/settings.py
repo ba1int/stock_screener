@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
-import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables from the root directory
 root_dir = Path(__file__).parent.parent.parent
-env_path = root_dir / '.env'
+env_path = root_dir / ".env"
 logger.info(f"Looking for .env file at: {env_path.absolute()}")
 
 if not env_path.exists():
@@ -26,21 +25,21 @@ load_dotenv(dotenv_path=env_path)
 logger.info("Loaded .env file successfully")
 
 # API Keys with validation
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')  # Use environ.get instead of getenv
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")  # Use environ.get instead of getenv
 logger.info(f"OpenAI API Key found: {'Yes' if OPENAI_API_KEY else 'No'}")
 
 if not OPENAI_API_KEY:
     logger.error("OpenAI API key not found in environment variables")
     raise ValueError("OpenAI API key not found in environment variables")
 
-NEWS_API_KEY = os.environ.get('NEWS_API_KEY')  # Use environ.get instead of getenv
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY")  # Use environ.get instead of getenv
 if not NEWS_API_KEY:
     logger.error("News API key not found in environment variables")
     raise ValueError("News API key not found in environment variables")
 
 # File paths
-DATA_DIR = Path(__file__).parent.parent / 'data'
-RESULTS_DIR = DATA_DIR / 'results'
+DATA_DIR = Path(__file__).parent.parent / "data"
+RESULTS_DIR = DATA_DIR / "results"
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
@@ -90,20 +89,21 @@ SMA_SLOW = 200
 VOLUME_MA_PERIOD = 20
 
 # API Settings
-YAHOO_MAX_RETRIES = int(os.getenv('YAHOO_MAX_RETRIES', 3))
-YAHOO_TIMEOUT = int(os.getenv('YAHOO_TIMEOUT', 10))
+YAHOO_MAX_RETRIES = int(os.getenv("YAHOO_MAX_RETRIES", 3))
+YAHOO_TIMEOUT = int(os.getenv("YAHOO_TIMEOUT", 10))
+OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", 3))
 
 # Logging Configuration
-LOG_FORMAT = '[%(levelname)s] %(message)s'
+LOG_FORMAT = "[%(levelname)s] %(message)s"
 
 # Default filters for penny stocks
 DEFAULT_FILTERS = {
-    'price': {'min': 0.1, 'max': 5.0},
-    'volume': {'min': 100000},
-    'market_cap': {'min': 50000000},  # $50M minimum market cap
-    'rsi': {'max': 40},  # Oversold condition
-    'sma_50_200_ratio': {'min': 0.8},  # Within 20% of 200-day MA
-    'beta': {'min': 1.2},  # Higher volatility
+    "price": {"min": 0.1, "max": 5.0},
+    "volume": {"min": 100000},
+    "market_cap": {"min": 50000000},  # $50M minimum market cap
+    "rsi": {"max": 40},  # Oversold condition
+    "sma_50_200_ratio": {"min": 0.8},  # Within 20% of 200-day MA
+    "beta": {"min": 1.2},  # Higher volatility
 }
 
 # Analysis settings
@@ -118,5 +118,5 @@ VOLUME_MA_PERIOD = 20
 
 # News API Settings
 NEWS_CACHE_DURATION = 1800  # Cache news data for 30 minutes
-MAX_NEWS_ARTICLES = 5      # Maximum number of news articles per stock
-NEWS_LOOKBACK_DAYS = 7     # Look back this many days for news 
+MAX_NEWS_ARTICLES = 5  # Maximum number of news articles per stock
+NEWS_LOOKBACK_DAYS = 7  # Look back this many days for news

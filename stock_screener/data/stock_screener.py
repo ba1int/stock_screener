@@ -5,155 +5,196 @@ Module for screening stocks based on financial metrics.
 import logging
 import time
 from typing import List, Dict, Any, Tuple
-from ..utils.helpers import setup_logging
-from .simple_yahoo import get_penny_stocks, get_stock_data
-from .newsapi_fetcher import get_stock_news
+from .simple_yahoo import get_penny_stocks, get_stock_data, get_stock_news
+# from .newsapi_fetcher import get_stock_news # Keep this if you want NewsAPI as primary/fallback
+import yfinance as yf
+from ..utils.helpers import save_json # Import save_json
+from ..config import settings # Import settings module
 
 # Set up logging directly instead of using the helper
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
-def screen_penny_stocks() -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+
+def screen_penny_stocks(
+    min_score: float = 7.0, max_stocks: int = 20
+) -> List[Dict[str, Any]]:
     """
     Screen penny stocks using data from Yahoo Finance.
-    Returns a tuple of (screened_stocks, news_data).
+    Returns a list of screened stocks.
     """
     try:
         logger.info("Starting penny stock screening process...")
-        
-        # Get penny stock tickers
-        tickers = get_penny_stocks()
-        
-        if not tickers:
-            logger.warning("No penny stocks found to screen")
-            return [], {}
-        
-        logger.info(f"Found {len(tickers)} potential penny stocks to screen")
-        
-        # Process each stock
+
         screened_stocks = []
-        news_data = {}
         stocks_processed = 0
         stocks_skipped = 0
-        
-        for i, ticker in enumerate(tickers):
+        start_time = time.time()
+
+        potential_stocks = get_penny_stocks()
+        logger.info(f"Found {len(potential_stocks)} potential penny stocks to screen")
+
+        total_potential = len(potential_stocks)
+        processed_count = 0
+
+        for ticker in potential_stocks:
+            processed_count += 1
             try:
-                # Log progress
-                if i > 0 and i % 5 == 0:
-                    logger.info(f"Processed {i}/{len(tickers)} stocks...")
-                
-                # Add delay between requests to avoid rate limiting
-                time.sleep(0.75)
-                
-                # Get stock data 
                 stock_data = get_stock_data(ticker)
-                
-                if 'error' in stock_data:
-                    logger.warning(f"Error with {ticker}: {stock_data['error']}")
+                if not stock_data or stock_data.get("error"):
+                    logger.warning(
+                        f"Skipping {ticker}: No data or error ({stock_data.get('error')})"
+                    )
                     stocks_skipped += 1
                     continue
-                
-                # Skip if missing critical data
-                if not stock_data.get('price') or not stock_data.get('volume'):
-                    logger.warning(f"Missing critical data for {ticker}")
-                    stocks_skipped += 1
-                    continue
-                
+
                 # Calculate score based on financial metrics
                 score = calculate_stock_score(stock_data)
-                if score > 0:
-                    stock_data['score'] = score
+                stock_data["score"] = score  # Add score to the dict
+
+                # Keep stocks with a minimum score
+                if score >= min_score:
                     screened_stocks.append(stock_data)
                     stocks_processed += 1
-                    
-                    # Get news for this ticker
-                    news_data[ticker] = get_stock_news(ticker)
                 else:
                     stocks_skipped += 1
-                
+
+                # Log progress periodically
+                if processed_count % 5 == 0:
+                    logger.info(
+                        f"Processed {processed_count}/{total_potential} stocks..."
+                    )
+
             except Exception as e:
-                logger.error(f"Error processing stock {ticker}: {str(e)}")
+                logger.error(f"Error processing ticker {ticker}: {e}", exc_info=True)
                 stocks_skipped += 1
-        
-        # Sort stocks by score (descending)
-        screened_stocks = sorted(screened_stocks, key=lambda x: x.get('score', 0), reverse=True)
-        
-        logger.info(f"Screening complete. Found {stocks_processed} matching stocks, skipped {stocks_skipped}")
-        
-        return screened_stocks, news_data
-        
+
+        # Sort by score descending
+        screened_stocks.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+        # Select top N stocks
+        top_stocks = screened_stocks[:max_stocks]
+        logger.info(f"Selected top {len(top_stocks)} stocks for analysis.")
+
+        # --- Fetch News ONLY for Top Stocks --- #
+        logger.info(f"Fetching news summaries for top {len(top_stocks)} stocks...")
+        for stock in top_stocks:
+            ticker = stock.get("ticker")
+            if ticker:
+                try:
+                    stock["news_summary"] = get_stock_news(ticker)
+                    time.sleep(0.3) # Small delay between news requests
+                except Exception as e:
+                     logger.error(f"Failed to get news for top stock {ticker}: {e}")
+                     stock["news_summary"] = "Error fetching news."
+            else:
+                 stock["news_summary"] = "Ticker not found for news fetching."
+        # --------------------------------------- #
+
+        elapsed_time = time.time() - start_time
+        logger.info(
+            f"Screening complete. Found {stocks_processed} matching stocks, skipped {stocks_skipped}. Time: {elapsed_time:.2f}s"
+        )
+
+        # Save results
+        # save_json("news_data", news_data, logger) # Remove this - news is now in top_stocks
+        save_json(
+            "selected_tickers", top_stocks, logger
+        )  # Save top_stocks which now include news
+
+        return top_stocks
+
     except Exception as e:
         logger.error(f"Error in screen_penny_stocks: {str(e)}")
-        return [], {}
+        return []
+
 
 def calculate_stock_score(stock_data: Dict[str, Any]) -> float:
-    """
-    Calculate a score for a stock based on financial metrics.
-    Higher score means more attractive investment.
-    """
+    """Calculate a comprehensive score for a stock based on multiple criteria."""
     try:
-        score = 0.0
-        
-        # Skip stocks with invalid data
-        price = stock_data.get('price')
-        if not price or price <= 0:
+        score = 0
+        max_score = 100 # Define a theoretical max score for normalization
+
+        # Basic validation
+        if not stock_data or not isinstance(stock_data, dict):
+            logger.debug("Invalid stock data for scoring")
             return 0
-        
-        volume = stock_data.get('volume')
-        if not volume or volume < 50000:  # Minimum volume threshold
-            return 0
-        
-        # Base score - all penny stocks start with this
-        score += 1
-        
-        # Price points (favor stocks closer to $1, avoid extremely cheap stocks)
-        if 0.5 <= price < 1:
-            score += 1
-        elif 1 <= price < 3:
-            score += 2
-        elif 3 <= price < 5:
-            score += 1
-        elif price < 0.1:
-            score -= 2  # Penalty for extremely cheap stocks
-        
-        # Volume points (higher volume = higher liquidity)
-        avg_volume = stock_data.get('avg_volume', 0)
-        if avg_volume > 1000000:
-            score += 3
-        elif avg_volume > 500000:
-            score += 2
-        elif avg_volume > 100000:
-            score += 1
-        
-        # Value metrics
-        pe_ratio = stock_data.get('pe_ratio')
-        if pe_ratio and 5 < pe_ratio < 15:  # Reasonably valued
-            score += 2
-        
-        # Growth potential (based on price relative to 52-week range)
-        high_52w = stock_data.get('high_52w')
-        low_52w = stock_data.get('low_52w')
-        if high_52w and low_52w and high_52w > low_52w:
-            # Calculate where current price is in the 52-week range (0 to 1)
-            range_position = (price - low_52w) / (high_52w - low_52w)
-            
-            # Favor stocks in lower half of 52-week range (more upside potential)
-            if range_position < 0.3:
-                score += 3  # Near 52-week low, potential value
-            elif range_position < 0.5:
-                score += 2  # Below middle of range
-        
-        # Sector/Industry bonus
-        sector = stock_data.get('sector', '').lower()
-        industry = stock_data.get('industry', '').lower()
-        
-        # Favor growth sectors
-        growth_sectors = ['technology', 'healthcare', 'consumer cyclical', 'biotech']
-        if any(s in sector for s in growth_sectors) or any(s in industry for s in growth_sectors):
-            score += 1
-        
-        return max(0, score)  # Ensure score isn't negative
-    
+
+        # --- Scoring Criteria --- #
+
+        # Price (under $5 for penny stocks) - Max 15 points
+        price = stock_data.get("price")
+        if price is not None:
+            if price < 1:
+                score += 15
+            elif price < 3:
+                score += 10
+            elif price < 5:
+                score += 5
+        else:
+            logger.debug(f"No price for {stock_data.get('ticker')} scoring")
+
+        # Volume vs Average Volume - Max 15 points
+        volume = stock_data.get("volume")
+        avg_volume = stock_data.get("avg_volume")
+        if volume is not None and avg_volume is not None and avg_volume > 10000: # Ensure avg_volume is meaningful
+            try:
+                vol_ratio = volume / avg_volume
+                if vol_ratio > 2:
+                    score += 15
+                elif vol_ratio > 1.5:
+                    score += 10
+                elif vol_ratio > 1:
+                    score += 5
+            except ZeroDivisionError:
+                logger.debug(f"Zero avg volume for {stock_data.get('ticker')}")
+        else:
+             logger.debug(f"Insufficient volume data for {stock_data.get('ticker')} scoring")
+
+        # P/E Ratio (Value) - Max 10 points (Adjusted scoring)
+        pe = stock_data.get("pe_ratio") # Assuming 'pe_ratio' from get_stock_data
+        if pe is not None and pe > 0:
+            if pe < 10:
+                score += 10
+            elif pe < 15:
+                score += 5
+        else:
+             logger.debug(f"No P/E for {stock_data.get('ticker')} scoring")
+
+        # Consider adding more criteria (e.g., EPS growth, Beta, Sector trends) if data is available
+
+        # --- Normalization --- #
+        # Normalize the score to a 0-10 scale (adjust max_score based on criteria added)
+        # Example max_score if only Price(15), Volume(15), PE(10) are used = 40
+        max_score_used = 15 + 15 + 10 # Update this if criteria change
+
+        if max_score_used == 0:
+             return 0 # Avoid division by zero
+
+        normalized_score = (score / max_score_used) * 10
+
+        logger.debug(f"Score for {stock_data.get('ticker')}: Raw={score}, Norm={normalized_score:.2f}")
+
+        return round(normalized_score, 2) # Return score out of 10
+
     except Exception as e:
-        logger.error(f"Error calculating score: {str(e)}")
+        logger.error(f"Error calculating score for {stock_data.get('ticker', 'unknown')}: {e}", exc_info=True)
         return 0
+
+
+def get_potential_picks(
+    min_score: float = 7.0, max_stocks: int = 20
+) -> List[Dict[str, Any]]:
+    """Fetch penny stocks, score them, and return top picks.
+
+    Args:
+        min_score: The minimum score a stock must have to be considered.
+        max_stocks: The maximum number of stocks to return.
+
+    Returns:
+        A list of stocks that meet the criteria.
+    """
+    # Implementation of get_potential_picks method
+    pass

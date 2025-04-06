@@ -15,4 +15,4 @@ setup(
             "stock-screener=stock_screener.main:main",
         ],
     },
-) 
+)
