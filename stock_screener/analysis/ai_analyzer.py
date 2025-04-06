@@ -1,53 +1,29 @@
 """
-Module for AI-powered stock analysis using OpenAI GPT.
+Module for AI-powered stock analysis using Ollama with Llama 3.2 3B.
 """
 
-import openai
-from openai import OpenAI, APIError
+import requests
 import time
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import json
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from ..config import settings
-from ..config.settings import RESULTS_DIR, OPENAI_API_KEY
+from ..config.settings import RESULTS_DIR
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Define the model to use - using the cheaper gpt-4o-mini model
-MODEL_NAME = "gpt-4o-mini"
-
-# Initialize OpenAI client
-try:
-    if not OPENAI_API_KEY:
-        raise ValueError("OpenAI API key is not set")
-
-    # Initialize client
-    client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://api.openai.com/v1")
-
-    # Test the client with a simple request
-    response = client.chat.completions.create(
-        model=MODEL_NAME, messages=[{"role": "user", "content": "Test"}], max_tokens=5
-    )
-    logger.info("Successfully tested OpenAI client")
-except OpenAIError as e:
-    logger.error(f"OpenAI API Error: {str(e)}")
-    client = None
-except Exception as e:
-    logger.error(f"Failed to initialize OpenAI client: {str(e)}")
-    client = None
-
-# Cache for GPT responses - LRU cache is generally preferred
-# gpt_cache = {}
-
+# Ollama API settings
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
+MODEL_NAME = "llama3:latest"
 
 def format_stock_data(stock: Dict[str, Any]) -> str:
     """
-    Format stock data for GPT analysis.
+    Format stock data for Llama analysis.
 
     Args:
         stock: Stock data dictionary
@@ -138,11 +114,10 @@ Company Description:
         logger.error(f"Error formatting stock data: {e}")
         return ""
 
-
 @lru_cache(maxsize=128)
-@retry(stop=stop_after_attempt(settings.OPENAI_MAX_RETRIES), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type(APIError))
+@retry(stop=stop_after_attempt(settings.OPENAI_MAX_RETRIES), wait=wait_exponential(multiplier=1, min=2, max=10))
 def generate_analysis(stock_data_str: str, ticker: str) -> str:
-    """Generate an analysis for a stock using GPT-4o-mini, with retry logic.
+    """Generate an analysis for a stock using Llama 3.2 3B, with retry logic.
 
     Args:
         stock_data_str: Formatted string with stock data
@@ -153,12 +128,8 @@ def generate_analysis(stock_data_str: str, ticker: str) -> str:
     """
     logger.info(f"Generating analysis for {ticker}")
 
-    if client is None:
-        logger.error("OpenAI client is not initialized")
-        return "Error: OpenAI client is not initialized. Please check your API key."
-
     try:
-        # Create a more concise prompt for GPT
+        # Create a more concise prompt for Llama
         prompt = f"""Analyze this stock based on the provided data:
 
 {stock_data_str}
@@ -180,58 +151,39 @@ Max 400 words.
 CRITICAL: Analyze the provided Options Sentiment data (Put/Call Ratios, Avg IV) and incorporate its implications into your overall analysis and recommendation.
 """
 
-        # Call GPT-4o-mini with increased max_tokens to ensure complete output
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Expert financial analyst providing extremely concise stock analyses. Focus on key points only. Be direct.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=800,  # Increased token limit to ensure complete responses
-            temperature=0.7,  # Slightly reduced from default for more focused responses
+        # Call Llama through Ollama API
+        response = requests.post(
+            OLLAMA_API_URL,
+            json={
+                "model": MODEL_NAME,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "max_tokens": 800
+                }
+            }
         )
-
-        analysis = response.choices[0].message.content.strip()
-
+        
+        if response.status_code != 200:
+            raise Exception(f"Ollama API error: {response.text}")
+            
+        analysis = response.json()["response"].strip()
         return analysis
 
-    except APIError as e:
-        logger.error(f"OpenAI API Error generating analysis for {ticker}: {e}")
-        raise e # Reraise to trigger retry
     except Exception as e:
-        logger.error(f"Unexpected error generating analysis for {ticker}: {e}")
-        # Don't retry on unexpected errors
+        logger.error(f"Error generating analysis for {ticker}: {e}")
         return f"Error: Could not generate analysis for {ticker}. {str(e)}"
-
 
 def analyze_stocks(stocks: List[Dict[str, Any]]) -> None:
     """
-    Analyze a list of stocks using OpenAI's GPT.
+    Analyze a list of stocks using Llama 3.2 3B.
 
     Args:
         stocks: List of stock data dictionaries
     """
     if not stocks:
         logger.warning("No stocks provided for analysis")
-        return
-
-    # Test the OpenAI client
-    try:
-        # Make a simple test request, no need to store the response
-        client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": "You are an expert financial analyst."},
-                {"role": "user", "content": "Test message"},
-            ],
-            max_tokens=50,
-        )
-        logger.info("Successfully tested OpenAI client")
-    except Exception as e:
-        logger.error(f"Error testing OpenAI client: {e}")
         return
 
     # Analyze each stock
@@ -294,7 +246,6 @@ def analyze_stocks(stocks: List[Dict[str, Any]]) -> None:
     # Save analyses to file
     if stocks_analyzed:
         save_analyses_to_file(stocks_analyzed)
-
 
 def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
     """
