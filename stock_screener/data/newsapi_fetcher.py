@@ -2,7 +2,6 @@
 Module for fetching and processing stock news using NewsAPI.
 """
 
-import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
 from ..utils.helpers import setup_logging
@@ -23,7 +22,10 @@ news_cache = {}
 
 
 @lru_cache(maxsize=128)
-@retry(stop=stop_after_attempt(MAX_NEWS_ARTICLES), wait=wait_exponential(multiplier=1, min=1, max=10))
+@retry(
+    stop=stop_after_attempt(MAX_NEWS_ARTICLES),
+    wait=wait_exponential(multiplier=1, min=1, max=10)
+)
 def get_stock_news(ticker, max_articles=MAX_NEWS_ARTICLES):
     """Get stock news with caching and improved error handling using NewsAPI."""
     logger.info(f"Fetching news for {ticker}...")

@@ -66,10 +66,9 @@ def save_json(filename_prefix: str, data: Any, logger: logging.Logger) -> None:
         elif isinstance(obj, np.floating):
             # Handle potential NaN/Inf values
             if np.isnan(obj):
-                return None # Represent NaN as null in JSON
+                return None    # Represent NaN as null in JSON
             elif np.isinf(obj):
-                # Represent Inf as a large number string or None
-                return str(obj) # Or None, depending on preference
+                return str(obj)    # Represent Inf as string
             return float(obj)
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
@@ -85,7 +84,6 @@ def save_json(filename_prefix: str, data: Any, logger: logging.Logger) -> None:
 
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        # Convert data before saving
         converted_data = convert_numpy_types(data)
         with open(output_path, "w") as f:
             json.dump(converted_data, f, indent=4)
@@ -123,11 +121,11 @@ def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
 
     Args:
         top_stocks: List of stock dictionaries including score and analysis.
-                    News should be under the 'news_summary' key if available.
     """
     date_str = datetime.now().strftime("%Y-%m-%d")
     summary_file = (
-        Path("stock_screener/data/results") / f"investment_summary_{date_str}.md"
+        Path("stock_screener/data/results") /
+        f"investment_summary_{date_str}.md"
     )
 
     try:
@@ -140,9 +138,11 @@ def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
 
             # Write overview
             f.write("## Overview\n")
-            f.write(
-                f"Analysis of top {len(top_stocks)} investment candidates based on our screening criteria.\n\n"
+            overview = (
+                f"Analysis of top {len(top_stocks)} investment candidates "
+                "based on our screening criteria.\n\n"
             )
+            f.write(overview)
 
             # Write each stock's summary
             for stock in top_stocks:
@@ -167,7 +167,7 @@ def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
                     formatted_market_cap = (
                         f"${market_cap}"
                         if isinstance(market_cap, (int, float))
-                        else f"{market_cap}"
+                        else str(market_cap)
                     )
 
                 f.write(f"- **Market Cap:** {formatted_market_cap}\n")
@@ -197,7 +197,11 @@ def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
                     pc_vol = options_metrics.get("pc_volume_ratio", "N/A")
                     pc_oi = options_metrics.get("pc_oi_ratio", "N/A")
                     avg_iv = options_metrics.get("average_iv", "N/A")
-                    iv_str = f"{avg_iv * 100:.1f}%" if isinstance(avg_iv, float) else "N/A"
+                    iv_str = (
+                        f"{avg_iv * 100:.1f}%"
+                        if isinstance(avg_iv, float)
+                        else "N/A"
+                    )
 
                     f.write(f"- Near-Term Expiry: {expiry}\n")
                     f.write(f"- P/C Volume Ratio: {pc_vol}\n")
@@ -220,3 +224,15 @@ def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
         logger.info(f"Investment summary saved to {summary_file}")
     except Exception as e:
         logger.error(f"Error saving investment summary: {str(e)}")
+
+
+def investment_summary_for_ticker(ticker: str, stock_info: Dict[str, Any]) -> str:
+    """Create a markdown summary for a single stock."""
+    investment_summary = (
+        f"# Investment Summary for {ticker}\n\n"
+        f"## Stock Information\n"
+        f"- Ticker: {ticker}\n"
+    )
+
+    # Add more stock information as needed
+    return investment_summary

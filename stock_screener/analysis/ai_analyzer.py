@@ -2,15 +2,12 @@
 Module for AI-powered stock analysis using Ollama with Llama 3.2 3B.
 """
 
-import requests
-import time
 import logging
+import requests
 from datetime import datetime
 from functools import lru_cache
-from typing import List, Dict, Any, Optional
-from pathlib import Path
-import json
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from typing import List, Dict, Any
+from tenacity import retry, stop_after_attempt, wait_exponential
 from ..config import settings
 from ..config.settings import RESULTS_DIR
 
@@ -20,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Ollama API settings
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "llama3:latest"
+
 
 def format_stock_data(stock: Dict[str, Any]) -> str:
     """
@@ -56,7 +54,8 @@ def format_stock_data(stock: Dict[str, Any]) -> str:
             pc_vol = options_metrics.get("pc_volume_ratio", "N/A")
             pc_oi = options_metrics.get("pc_oi_ratio", "N/A")
             avg_iv = options_metrics.get("average_iv", "N/A")
-            if avg_iv != "N/A": avg_iv = f"{avg_iv * 100:.1f}%" # Format IV as percentage
+            if avg_iv != "N/A":
+                avg_iv = f"{avg_iv * 100:.1f}%"  # Format IV as percentage
             options_metrics_str = (
                 f"Put/Call Vol Ratio: {pc_vol}, "
                 f"Put/Call OI Ratio: {pc_oi}, "
@@ -114,8 +113,12 @@ Company Description:
         logger.error(f"Error formatting stock data: {e}")
         return ""
 
+
 @lru_cache(maxsize=128)
-@retry(stop=stop_after_attempt(settings.OPENAI_MAX_RETRIES), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(
+    stop=stop_after_attempt(settings.OPENAI_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+)
 def generate_analysis(stock_data_str: str, ticker: str) -> str:
     """Generate an analysis for a stock using Llama 3.2 3B, with retry logic.
 
@@ -136,19 +139,20 @@ def generate_analysis(stock_data_str: str, ticker: str) -> str:
 
 Provide a CONCISE investment analysis including:
 1. Technical Analysis: Key price levels and volume trends (2-3 bullet points)
-2. Fundamental Analysis: Current valuation (P/E, EPS, market cap) 
+2. Fundamental Analysis: Current valuation (P/E, EPS, market cap)
    and growth outlook (2-3 bullet points)
 3. Risk Assessment: Major risks to be aware of (2-3 bullet points)
 4. Recommendation: Clear buy/hold/sell stance with brief rationale
 5. Price Target: Short-term and long-term targets if applicable
 
-Note: Focus on the data available - don't analyze metrics not provided 
+Note: Focus on the data available - don't analyze metrics not provided
 (e.g., revenue growth, profit margin).
 
-IMPORTANT: Be extremely concise. Use short sentences. Avoid lengthy explanations. 
+IMPORTANT: Be extremely concise. Use short sentences. Avoid lengthy explanations.
 Max 400 words.
 
-CRITICAL: Analyze the provided Options Sentiment data (Put/Call Ratios, Avg IV) and incorporate its implications into your overall analysis and recommendation.
+CRITICAL: Analyze the provided Options Sentiment data (Put/Call Ratios, Avg IV)
+and incorporate its implications into your overall analysis and recommendation.
 """
 
         # Call Llama through Ollama API
@@ -158,22 +162,20 @@ CRITICAL: Analyze the provided Options Sentiment data (Put/Call Ratios, Avg IV) 
                 "model": MODEL_NAME,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "temperature": 0.7,
-                    "max_tokens": 800
-                }
-            }
+                "options": {"temperature": 0.7, "max_tokens": 800},
+            },
         )
-        
+
         if response.status_code != 200:
             raise Exception(f"Ollama API error: {response.text}")
-            
+
         analysis = response.json()["response"].strip()
         return analysis
 
     except Exception as e:
         logger.error(f"Error generating analysis for {ticker}: {e}")
         return f"Error: Could not generate analysis for {ticker}. {str(e)}"
+
 
 def analyze_stocks(stocks: List[Dict[str, Any]]) -> None:
     """
@@ -231,7 +233,8 @@ def analyze_stocks(stocks: List[Dict[str, Any]]) -> None:
 
             print(f"Stock: {ticker_display}")
             print(
-                f"Price: ${price} | Market Cap: {market_cap} | P/E: {pe_ratio} | EPS: {eps}"
+                f"Price: ${price} | Market Cap: {market_cap} | "
+                f"P/E: {pe_ratio} | EPS: {eps}"
             )
             print("-" * 80)
 
@@ -247,83 +250,38 @@ def analyze_stocks(stocks: List[Dict[str, Any]]) -> None:
     if stocks_analyzed:
         save_analyses_to_file(stocks_analyzed)
 
+
 def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
     """
     Save stock analyses to a markdown file.
 
     Args:
-        stocks: List of stock dictionaries with analyses
+        stocks: List of analyzed stock data dictionaries
     """
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    output_path = RESULTS_DIR / f"penny_stocks_analysis_{date_str}.md"
-
     try:
-        # Make sure the directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Create results directory if it doesn't exist
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, "w") as f:
-            # Write header
-            f.write(f"# Penny Stock Analysis Report - {date_str}\n\n")
-            f.write("## Overview\n")
-            f.write(
-                f"This report contains analysis for {len(stocks)} penny stocks that match our screening criteria.\n\n"
-            )
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d")
+        filename = RESULTS_DIR / f"penny_stocks_analysis_{timestamp}.md"
 
-            # Write a summary table
-            f.write("## Summary Table\n\n")
-            f.write("| Rank | Ticker | Price | Score | Sector | Recommendation |\n")
-            f.write("|------|--------|-------|-------|--------|----------------|\n")
-
-            for i, stock in enumerate(stocks, 1):
-                ticker = stock.get("ticker", "unknown")
-                price = stock.get("price", "N/A")
-                score = stock.get("score", "N/A")
-                sector = stock.get("sector", "N/A")
-
-                # Extract recommendation from analysis if available
-                recommendation = "N/A"
-                analysis = stock.get("analysis", "")
-                if "Recommendation:" in analysis:
-                    # Try to extract the recommendation
-                    try:
-                        rec_text = (
-                            analysis.split("Recommendation:")[1].split("\n")[0].strip()
-                        )
-                        if rec_text:
-                            recommendation = rec_text
-                    except Exception as e:
-                        logger.debug(f"Could not parse recommendation: {e}")
-                        pass
-
-                f.write(
-                    f"| {i} | {ticker} | ${price} | {score} | {sector} | {recommendation} |\n"
-                )
-
-            f.write("\n## Detailed Analyses\n\n")
-
-            # Write each stock analysis
-            for i, stock in enumerate(stocks, 1):
+        # Write analyses to file
+        with open(filename, "w") as f:
+            f.write("# Penny Stocks Analysis\n\n")
+            for stock in stocks:
                 ticker = stock.get("ticker", "unknown")
                 company_name = stock.get("company_name", "")
-                price = stock.get("price", "N/A")
-                score = stock.get("score", "N/A")
+                analysis = stock.get("analysis", "No analysis available.")
 
-                title = f"{ticker}"
+                f.write(f"## {ticker}")
                 if company_name:
-                    title += f" - {company_name}"
-
-                f.write(f"### {i}. {title}\n\n")
-                f.write(f"**Price**: ${price} | **Score**: {score}\n\n")
-
-                # Write analysis in a more readable format
-                analysis = stock.get("analysis", "Analysis not available")
-
-                # Don't use code blocks, use markdown instead
+                    f.write(f" - {company_name}")
+                f.write("\n\n")
                 f.write(analysis)
                 f.write("\n\n---\n\n")
 
-        logger.info(f"Analysis saved to {output_path}")
-        return
+        logger.info(f"Analyses saved to {filename}")
+
     except Exception as e:
         logger.error(f"Error saving analyses to file: {e}")
-        return

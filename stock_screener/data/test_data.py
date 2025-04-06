@@ -19,7 +19,10 @@ SAMPLE_STOCKS = [
         "eps": 6.15,
         "dividend_yield": 0.65,
         "beta": 1.21,
-        "description": "Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide.",
+        "description": (
+            "Apple Inc. designs, manufactures, and markets smartphones, personal "
+            "computers, tablets, wearables, and accessories worldwide."
+        ),
     },
     {
         "ticker": "FCEL",
@@ -36,7 +39,10 @@ SAMPLE_STOCKS = [
         "eps": -7.88,
         "dividend_yield": None,
         "beta": 3.94,
-        "description": "FuelCell Energy, Inc. designs, manufactures, sells, installs, operates, and services stationary fuel cell power plants for distributed baseload power generation.",
+        "description": (
+            "FuelCell Energy, Inc. designs, manufactures, sells, installs, operates, "
+            "and services stationary fuel cell power plants for distributed power."
+        ),
     },
     {
         "ticker": "OCGN",
@@ -53,7 +59,10 @@ SAMPLE_STOCKS = [
         "eps": -0.20,
         "dividend_yield": None,
         "beta": 3.79,
-        "description": "Ocugen, Inc., a clinical-stage biopharmaceutical company, focuses on discovering, developing, and commercializing gene therapies, vaccines, and biologics.",
+        "description": (
+            "Ocugen, Inc., a clinical-stage biopharmaceutical company, focuses on "
+            "discovering and developing gene therapies and vaccines."
+        ),
     },
     {
         "ticker": "NOK",
@@ -70,7 +79,10 @@ SAMPLE_STOCKS = [
         "eps": 0.34,
         "dividend_yield": 2.61,
         "beta": 0.78,
-        "description": "Nokia Corporation engages in the network and technology businesses worldwide.",
+        "description": (
+            "Nokia Corporation engages in the network and technology businesses "
+            "worldwide."
+        ),
     },
     {
         "ticker": "AMC",
@@ -87,7 +99,10 @@ SAMPLE_STOCKS = [
         "eps": -1.06,
         "dividend_yield": None,
         "beta": 1.83,
-        "description": "AMC Entertainment Holdings, Inc. operates as a theatrical exhibition company.",
+        "description": (
+            "AMC Entertainment Holdings, Inc. operates as a theatrical exhibition "
+            "company."
+        ),
     },
 ]
 
@@ -101,25 +116,71 @@ SAMPLE_NEWS_DATA = {
                 "source": {"id": "the-verge", "name": "The Verge"},
                 "author": "Emma Roth",
                 "title": "Apple expected to show off new AI strategy at WWDC 2024",
-                "description": "Apple is expected to announce its AI strategy at WWDC 2024. We could see updates to Siri and potentially partnerships with companies like OpenAI or Google.",
+                "description": (
+                    "Apple is expected to announce its AI strategy at WWDC 2024. "
+                    "We could see updates to Siri and potentially partnerships with "
+                    "companies like OpenAI or Google."
+                ),
                 "url": "https://www.theverge.com/apple-wwdc-2024-ai-strategy",
                 "urlToImage": "https://cdn.vox-cdn.com/thumbor/example.jpg",
                 "publishedAt": "2024-06-10T17:00:00Z",
-                "content": "Apple\'s Worldwide Developers Conference kicks off today...",
+                "content": "Apple's Worldwide Developers Conference kicks off today...",
             }
         ],
     },
-    "FCEL": "- [FuelCell Energy partners with major utility](https://example.com/news3) - Reuters (2025-04-02)\n- [Hydrogen stocks gain momentum](https://example.com/news4) - Bloomberg (2025-03-20)\n",
-    "OCGN": "- [Ocugen announces positive trial results](https://example.com/news5) - BioSpace (2025-04-03)\n- [Ocugen secures new funding](https://example.com/news6) - BioPharma Dive (2025-03-28)\n",
-    "NOK": "- [Nokia wins major 5G contract](https://example.com/news7) - Reuters (2025-04-02)\n- [Nokia expands in emerging markets](https://example.com/news8) - Financial Times (2025-03-25)\n",
-    "AMC": "- [AMC introduces new subscription service](https://example.com/news9) - Variety (2025-04-01)\n- [Movie theater attendance rebounds](https://example.com/news10) - Hollywood Reporter (2025-03-18)\n",
+    "FCEL": (
+        "- [FuelCell Energy partners with major utility](https://example.com/news3) - "
+        "Reuters (2025-04-02)\n"
+        "- [Hydrogen stocks gain momentum](https://example.com/news4) - "
+        "Bloomberg (2025-03-20)\n"
+    ),
+    "OCGN": (
+        "- [Ocugen announces positive trial results](https://example.com/news5) - "
+        "BioSpace (2025-04-03)\n"
+        "- [Ocugen secures new funding](https://example.com/news6) - "
+        "BioPharma Dive (2025-03-28)\n"
+    ),
+    "NOK": (
+        "- [Nokia wins major 5G contract](https://example.com/news7) - "
+        "Reuters (2025-04-02)\n"
+        "- [Nokia expands in emerging markets](https://example.com/news8) - "
+        "Financial Times (2025-03-25)\n"
+    ),
+    "AMC": (
+        "- [AMC introduces new subscription service](https://example.com/news9) - "
+        "Variety (2025-04-01)\n"
+        "- [Movie theater attendance rebounds](https://example.com/news10) - "
+        "Hollywood Reporter (2025-03-18)\n"
+    ),
 }
 
 # Sample analysis results for testing
 SAMPLE_ANALYSIS = {
-    "AAPL": "Apple presents a strong investment opportunity with consistent revenue growth and a loyal customer base. The company continues to innovate in its product lineup while expanding services revenue. Strong financial position with large cash reserves.",
-    "FCEL": "FuelCell Energy operates in the promising clean energy sector but faces significant challenges in achieving profitability. High volatility makes this a speculative investment. Consider only as a small position in a diversified portfolio.",
-    "OCGN": "Ocugen is a high-risk biotech play with significant binary outcome potential based on clinical trial results. Current losses and cash burn rate present challenges, but successful trials could provide substantial upside.",
-    "NOK": "Nokia offers stability with modest growth potential in the expanding 5G infrastructure market. Lower volatility than peers makes it suitable for more conservative investors seeking exposure to telecommunications equipment.",
-    "AMC": "AMC faces continued challenges from streaming competition and debt levels. While recent retail investor interest has supported the stock price, fundamental concerns remain about long-term profitability and industry trends.",
+    "AAPL": (
+        "Apple presents a strong investment opportunity with consistent revenue growth "
+        "and a loyal customer base. The company continues to innovate in its product "
+        "lineup while expanding services revenue. Strong financial position with large "
+        "cash reserves."
+    ),
+    "FCEL": (
+        "FuelCell Energy operates in the promising clean energy sector but faces "
+        "significant challenges in achieving profitability. High volatility makes "
+        "this a speculative investment. Consider only as a small position in a "
+        "diversified portfolio."
+    ),
+    "OCGN": (
+        "Ocugen is a high-risk biotech play with significant binary outcome potential "
+        "based on clinical trial results. Current losses and cash burn rate present "
+        "challenges, but successful trials could provide substantial upside."
+    ),
+    "NOK": (
+        "Nokia offers stability with modest growth potential in the expanding 5G "
+        "infrastructure market. Lower volatility than peers makes it suitable for "
+        "more conservative investors seeking exposure to telecommunications equipment."
+    ),
+    "AMC": (
+        "AMC faces continued challenges from streaming competition and debt levels. "
+        "While recent retail investor interest has supported the stock price, "
+        "fundamental concerns remain about long-term profitability and industry trends."
+    ),
 }

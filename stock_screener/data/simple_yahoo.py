@@ -7,10 +7,15 @@ import logging
 import time
 from functools import lru_cache
 from typing import List, Dict, Any
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 from requests.exceptions import RequestException
 from ..config import settings
-from datetime import datetime, timedelta
+from datetime import datetime
 import pandas as pd
 
 # Configure logging
@@ -20,24 +25,100 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Expanded list of potential penny stock tickers across various sectors
-PENNY_STOCKS_LIST = list(set([
-    # Technology
-    "SIRI", "NOK", "GPRO", "BB", "SSYS", "IQ", "RAD", "PLTR", "SOFI", "CLSK",
-    # Healthcare
-    "ACRX", "SRNE", "NVAX", "MNKD", "PGNX", "CTXR", "SESN", "ATOS", "SNDL", "VXRT",
-    # Energy
-    "FCEL", "PLUG", "UUUU", "CPE", "SHIP", "BORR", "TELL", "WWR", "RIG", "NOG",
-    # Retail
-    "EXPR", "GME", "AMC", "BBBY", "WISH", "KOSS", "NAKD", "SFIX", "POSH", "REAL",
-    # Mining
-    "BTG", "NAK", "GPL", "EGO", "HL", "SVM", "MUX", "AG", "PAAS", "MAG",
-    # Biotech
-    "OCGN", "INO", "BCRX", "BNGO", "AMRN", "TTOO", "CODX", "ADMA", "IBIO", "OGEN",
-    # Finance
-    "FAMI", "METX", "BK", "IVR", "TWO", "XSPA", "CLOV", "UWMC", "GSAT", "MNMD",
-    # Other
-    "IDEX", "MARA", "RIOT", "SOS", "ZOM", "GEVO", "SENS", "TRCH", "CIDM", "MVIS"
-])) # Use set to remove duplicates
+PENNY_STOCKS_LIST = list(
+    set(
+        [
+            # Technology
+            "SIRI",
+            "NOK",
+            "GPRO",
+            "BB",
+            "SSYS",
+            "IQ",
+            "RAD",
+            "PLTR",
+            "SOFI",
+            "CLSK",
+            # Healthcare
+            "ACRX",
+            "SRNE",
+            "NVAX",
+            "MNKD",
+            "PGNX",
+            "CTXR",
+            "SESN",
+            "ATOS",
+            "SNDL",
+            "VXRT",
+            # Energy
+            "FCEL",
+            "PLUG",
+            "UUUU",
+            "CPE",
+            "SHIP",
+            "BORR",
+            "TELL",
+            "WWR",
+            "RIG",
+            "NOG",
+            # Retail
+            "EXPR",
+            "GME",
+            "AMC",
+            "BBBY",
+            "WISH",
+            "KOSS",
+            "NAKD",
+            "SFIX",
+            "POSH",
+            "REAL",
+            # Mining
+            "BTG",
+            "NAK",
+            "GPL",
+            "EGO",
+            "HL",
+            "SVM",
+            "MUX",
+            "AG",
+            "PAAS",
+            "MAG",
+            # Biotech
+            "OCGN",
+            "INO",
+            "BCRX",
+            "BNGO",
+            "AMRN",
+            "TTOO",
+            "CODX",
+            "ADMA",
+            "IBIO",
+            "OGEN",
+            # Finance
+            "FAMI",
+            "METX",
+            "BK",
+            "IVR",
+            "TWO",
+            "XSPA",
+            "CLOV",
+            "UWMC",
+            "GSAT",
+            "MNMD",
+            # Other
+            "IDEX",
+            "MARA",
+            "RIOT",
+            "SOS",
+            "ZOM",
+            "GEVO",
+            "SENS",
+            "TRCH",
+            "CIDM",
+            "MVIS",
+        ]
+    )
+)  # Use set to remove duplicates
 
 
 def get_penny_stocks() -> List[str]:
@@ -75,7 +156,11 @@ def get_penny_stocks() -> List[str]:
 
 
 @lru_cache(maxsize=256)
-@retry(stop=stop_after_attempt(settings.YAHOO_MAX_RETRIES), wait=wait_exponential(multiplier=1, min=1, max=settings.YAHOO_TIMEOUT // 2), retry=retry_if_exception_type(RequestException))
+@retry(
+    stop=stop_after_attempt(settings.YAHOO_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=1, max=settings.YAHOO_TIMEOUT // 2),
+    retry=retry_if_exception_type(RequestException),
+)
 def get_stock_data(ticker: str) -> Dict[str, Any]:
     """Get detailed data for a stock."""
     logger.info(f"Getting data for {ticker}")
@@ -133,7 +218,11 @@ def get_stock_data(ticker: str) -> Dict[str, Any]:
 
 
 @lru_cache(maxsize=128)
-@retry(stop=stop_after_attempt(settings.YAHOO_MAX_RETRIES), wait=wait_exponential(multiplier=1, min=1, max=5), retry=retry_if_exception_type(RequestException))
+@retry(
+    stop=stop_after_attempt(settings.YAHOO_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=1, max=5),
+    retry=retry_if_exception_type(RequestException),
+)
 def get_stock_news(ticker: str) -> str:
     """Get news for a stock, include date, with retry logic."""
     logger.info(f"Getting news for {ticker}")
@@ -151,8 +240,8 @@ def get_stock_news(ticker: str) -> str:
             # Optionally add a fallback news source here if needed
 
         if not news:
-             logger.warning(f"No news found for {ticker}")
-             return "No recent news found."
+            logger.warning(f"No news found for {ticker}")
+            return "No recent news found."
 
         news_text = ""
         for i, item in enumerate(news[:5]):  # Top 5 news items
@@ -166,22 +255,26 @@ def get_stock_news(ticker: str) -> str:
                 if publish_time:
                     try:
                         # Convert timestamp to readable date
-                        date_str = datetime.fromtimestamp(publish_time).strftime("%Y-%m-%d")
+                        date_str = datetime.fromtimestamp(publish_time).strftime(
+                            "%Y-%m-%d"
+                        )
                     except Exception as date_e:
-                        logger.debug(f"Could not parse news timestamp {publish_time}: {date_e}")
+                        logger.debug(
+                            f"Could not parse news timestamp {publish_time}: {date_e}"
+                        )
                         date_str = "(Date unknown)"
                 else:
                     date_str = "(Date unknown)"
 
                 news_text += f"- [{title}]({link}) - {publisher} {date_str}\n"
             except Exception as item_e:
-                 logger.debug(f"Error formatting news item for {ticker}: {item_e}")
+                logger.debug(f"Error formatting news item for {ticker}: {item_e}")
 
         return news_text if news_text else "Error processing news."
 
     except RequestException as e:
         logger.error(f"Network error getting news for {ticker}: {e}")
-        raise e # Reraise for retry
+        raise e  # Reraise for retry
     except Exception as e:
         logger.error(f"Unexpected error getting news for {ticker}: {e}")
         return "Error fetching news."
@@ -189,8 +282,13 @@ def get_stock_news(ticker: str) -> str:
 
 # --- Options Data --- #
 
+
 @lru_cache(maxsize=256)
-@retry(stop=stop_after_attempt(settings.YAHOO_MAX_RETRIES), wait=wait_exponential(multiplier=1, min=1, max=settings.YAHOO_TIMEOUT // 2), retry=retry_if_exception_type(RequestException))
+@retry(
+    stop=stop_after_attempt(settings.YAHOO_MAX_RETRIES),
+    wait=wait_exponential(multiplier=1, min=1, max=settings.YAHOO_TIMEOUT // 2),
+    retry=retry_if_exception_type(RequestException),
+)
 def get_options_metrics(ticker: str) -> Dict[str, Any]:
     """Fetch options chain data and calculate key metrics.
 
@@ -236,22 +334,25 @@ def get_options_metrics(ticker: str) -> Dict[str, Any]:
 
         if not valid_expiries:
             # Fallback: try nearest expiry if none in 30-60 day range
-            logger.debug(f"No expiry found in {min_days}-{max_days} days for {ticker}. Trying nearest.")
+            logger.debug(
+                f"No expiry found in {
+                    min_days}-{max_days} days for {ticker}. Trying nearest."
+            )
             for expiry_str in expiries:
-                 try:
+                try:
                     expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
                     days_to_expiry = (expiry_date - today).days
-                    if days_to_expiry > 0: # Ensure it's in the future
+                    if days_to_expiry > 0:  # Ensure it's in the future
                         valid_expiries.append((days_to_expiry, expiry_str))
-                 except ValueError:
-                     continue
+                except ValueError:
+                    continue
             if not valid_expiries:
                 logger.warning(f"No valid future expiration dates found for {ticker}")
                 return {"error": "No suitable options expiration dates found"}
 
         # Select the expiry closest to our target range (or just the nearest future)
-        valid_expiries.sort() # Sort by days_to_expiry
-        target_expiry = valid_expiries[0][1] # [1] gets the date string
+        valid_expiries.sort()  # Sort by days_to_expiry
+        target_expiry = valid_expiries[0][1]  # [1] gets the date string
         logger.info(f"Selected expiry {target_expiry} for {ticker}")
 
         # 3. Fetch Option Chain for selected expiry
@@ -260,7 +361,10 @@ def get_options_metrics(ticker: str) -> Dict[str, Any]:
             calls = opt_chain.calls
             puts = opt_chain.puts
         except Exception as e:
-            logger.warning(f"Could not retrieve option chain for {ticker} expiry {target_expiry}: {e}")
+            logger.warning(
+                f"Could not retrieve option chain for {
+                    ticker} expiry {target_expiry}: {e}"
+            )
             return {"error": f"Failed to retrieve option chain for {target_expiry}"}
 
         if calls.empty and puts.empty:
@@ -268,43 +372,55 @@ def get_options_metrics(ticker: str) -> Dict[str, Any]:
             return {"error": "Option chain is empty"}
 
         # 4. Calculate Put/Call Ratios
-        total_call_volume = calls['volume'].sum() if 'volume' in calls.columns else 0
-        total_put_volume = puts['volume'].sum() if 'volume' in puts.columns else 0
-        total_call_oi = calls['openInterest'].sum() if 'openInterest' in calls.columns else 0
-        total_put_oi = puts['openInterest'].sum() if 'openInterest' in puts.columns else 0
+        total_call_volume = calls["volume"].sum() if "volume" in calls.columns else 0
+        total_put_volume = puts["volume"].sum() if "volume" in puts.columns else 0
+        total_call_oi = (
+            calls["openInterest"].sum() if "openInterest" in calls.columns else 0
+        )
+        total_put_oi = (
+            puts["openInterest"].sum() if "openInterest" in puts.columns else 0
+        )
 
-        pc_volume_ratio = total_put_volume / total_call_volume if total_call_volume > 0 else None
+        pc_volume_ratio = (
+            total_put_volume / total_call_volume if total_call_volume > 0 else None
+        )
         pc_oi_ratio = total_put_oi / total_call_oi if total_call_oi > 0 else None
 
         # 5. Calculate Weighted Average IV
         # Combine calls and puts, filter out zero OI or IV
         all_options = pd.concat([calls, puts])
         valid_iv_options = all_options[
-            (all_options['openInterest'] > 0) & (all_options['impliedVolatility'] > 0)
+            (all_options["openInterest"] > 0) & (all_options["impliedVolatility"] > 0)
         ].copy()
 
         weighted_iv = None
         if not valid_iv_options.empty:
-            valid_iv_options['iv_x_oi'] = valid_iv_options['impliedVolatility'] * valid_iv_options['openInterest']
-            total_oi_for_iv = valid_iv_options['openInterest'].sum()
+            valid_iv_options["iv_x_oi"] = (
+                valid_iv_options["impliedVolatility"] * valid_iv_options["openInterest"]
+            )
+            total_oi_for_iv = valid_iv_options["openInterest"].sum()
             if total_oi_for_iv > 0:
-                weighted_iv = valid_iv_options['iv_x_oi'].sum() / total_oi_for_iv
+                weighted_iv = valid_iv_options["iv_x_oi"].sum() / total_oi_for_iv
 
         # 6. Return results
         metrics = {
             "selected_expiry": target_expiry,
-            "pc_volume_ratio": round(pc_volume_ratio, 3) if pc_volume_ratio is not None else None,
+            "pc_volume_ratio": (
+                round(pc_volume_ratio, 3) if pc_volume_ratio is not None else None
+            ),
             "pc_oi_ratio": round(pc_oi_ratio, 3) if pc_oi_ratio is not None else None,
             "average_iv": round(weighted_iv, 4) if weighted_iv is not None else None,
-            "total_volume": int(total_call_volume + total_put_volume), # Cast to int
-            "total_open_interest": int(total_call_oi + total_put_oi) # Cast to int
+            "total_volume": int(total_call_volume + total_put_volume),  # Cast to int
+            "total_open_interest": int(total_call_oi + total_put_oi),  # Cast to int
         }
         logger.debug(f"Options metrics for {ticker}: {metrics}")
         return metrics
 
     except RequestException as e:
         logger.error(f"Network error fetching options data for {ticker}: {e}")
-        raise e # Reraise to trigger retry
+        raise e  # Reraise to trigger retry
     except Exception as e:
-        logger.error(f"Unexpected error fetching options data for {ticker}: {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error fetching options data for {ticker}: {e}", exc_info=True
+        )
         return {"error": f"Unexpected error fetching options data for {ticker}"}
