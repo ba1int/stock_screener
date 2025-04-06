@@ -6,8 +6,8 @@ A comprehensive tool for screening, analyzing, and reporting on stocks, with a f
 
 - Screen stocks based on financial metrics
 - Fetch real-time stock data with Yahoo Finance
-- Fetch relevant news articles with NewsAPI.org
-- Generate AI-powered analysis using GPT models
+- Analyze options data for market sentiment
+- Generate AI-powered analysis using Llama 3 via Ollama
 - Save detailed investment reports and summaries
 
 ## Project Structure
@@ -18,7 +18,6 @@ stock_screener/
 ├── analysis/           # Stock analysis components
 ├── config/             # Configuration settings
 ├── data/               # Data retrieval and processing
-│   ├── newsapi_fetcher.py  # News fetching using NewsAPI
 │   ├── simple_yahoo.py     # Yahoo Finance integration
 │   ├── stock_screener.py   # Main screening logic
 │   └── test_data.py        # Sample data for testing
@@ -48,6 +47,13 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
+5. Install Ollama (for local LLM support)
+   - Follow instructions at [Ollama's GitHub](https://github.com/ollama/ollama)
+   - Pull the Llama 3 model:
+   ```bash
+   ollama pull llama3:latest
+   ```
+
 ## Configuration
 
 1. Copy the example environment file:
@@ -55,17 +61,11 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-2. Edit the `.env` file and add your API keys:
+2. Edit the `.env` file and add your configuration:
 ```
-OPENAI_API_KEY=your_openai_api_key
-NEWS_API_KEY=your_newsapi_key
 YAHOO_MAX_RETRIES=3
 YAHOO_TIMEOUT=10
 ```
-
-You'll need:
-- An OpenAI API key from [OpenAI](https://platform.openai.com/)
-- A NewsAPI key from [NewsAPI.org](https://newsapi.org/)
 
 ## Usage
 
@@ -85,23 +85,18 @@ python run_specific_component.py --fetch
 # Run stock screening component
 python run_specific_component.py --screen
 
-# Run news fetching component
-python run_specific_component.py --news
-
 # Run AI analysis component
 python run_specific_component.py --analyze
 ```
 
 ## Testing
 
-See [README_TESTING.md](README_TESTING.md) for detailed information on testing individual components.
-
 ```bash
 # Run a single stock analysis test
 python test_ai_analysis.py --single
 
-# Test news fetching with sample data
-python test_news_fetching.py --sample
+# Test stock scoring
+python test_stock_scoring.py
 ```
 
 ## Output Files
@@ -110,8 +105,7 @@ The screener generates several output files:
 
 - `selected_tickers_[date].json`: Basic information about all selected stocks
 - `investment_summary_[date].md`: Detailed investment summary with analysis
-- `news_data_[date].json`: News articles for each stock
-- `analysis_reports/[ticker]_analysis_[date].txt`: Detailed AI analysis per stock
+- `penny_stocks_analysis_[date].md`: Comprehensive analysis of screened stocks
 
 ## Contributing
 
@@ -125,11 +119,16 @@ The screener generates several output files:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## News API Integration
+## AI Analysis Integration
 
-The stock screener uses NewsAPI.org for fetching news articles, providing high-quality, well-formatted news data for each stock.
+The stock screener uses Llama 3 via Ollama for generating stock analyses. This provides:
+- Local processing of analyses (no API costs)
+- Privacy (data stays on your machine)
+- Customizable analysis through prompt engineering
+- Fast response times
 
 ### Requirements
 
-- A NewsAPI.org API key (add to `.env` file as `NEWS_API_KEY`)
-- The newsapi-python package: `pip install newsapi-python` 
+- Ollama installed and running
+- Llama 3 model pulled (`ollama pull llama3:latest`)
+- Sufficient system resources for LLM inference 
