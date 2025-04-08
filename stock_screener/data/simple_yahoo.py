@@ -162,59 +162,193 @@ def get_penny_stocks() -> List[str]:
     retry=retry_if_exception_type(RequestException),
 )
 def get_stock_data(ticker: str) -> Dict[str, Any]:
-    """Get detailed data for a stock."""
+    """Get detailed data for a stock, including enhanced metrics."""
     logger.info(f"Getting data for {ticker}")
+    stock_data = {"ticker": ticker} # Initialize
     try:
         stock = yf.Ticker(ticker)
 
-        # Get basic info
+        # 1. Get basic info (already present)
         info = {}
         try:
             info = stock.info
+            stock_data.update({
+                "company_name": info.get("shortName", "Unknown"),
+                "sector": info.get("sector", "Unknown"),
+                "industry": info.get("industry", "Unknown"),
+                "market_cap": info.get("marketCap", None),
+                "pe_ratio": info.get("trailingPE", None),
+                "eps": info.get("trailingEps", None),
+                "dividend_yield": info.get("dividendYield", None),
+                "beta": info.get("beta", None),
+                "description": info.get("longBusinessSummary", None),
+                # Use institutional ownership from info if available (more reliable)
+                "institutional_ownership_pct": info.get("heldPercentInstitutions", None) * 100 if info.get("heldPercentInstitutions") else None,
+                # Use profit margin from info if available
+                "profit_margin_pct": info.get("profitMargins", None) * 100 if info.get("profitMargins") else None,
+            })
         except Exception as e:
             logger.warning(f"Could not get info for {ticker}: {e}")
 
-        # Get recent price data
+        # 2. Get recent price data (already present)
         price_data = {}
         try:
-            hist = stock.history(period="1y")
+            hist = stock.history(period="1y") # Fetches daily data for 1 year
             if not hist.empty:
                 price_data = {
-                    "current_price": hist["Close"].iloc[-1],
+                    "price": hist["Close"].iloc[-1],
                     "volume": hist["Volume"].iloc[-1],
                     "high_52w": hist["High"].max(),
                     "low_52w": hist["Low"].min(),
                     "avg_volume": hist["Volume"].mean(),
                 }
+                stock_data.update(price_data)
+            else:
+                logger.warning(f"Empty history data for {ticker}")
         except Exception as e:
             logger.warning(f"Could not get price data for {ticker}: {e}")
 
-        # Combine data
-        stock_data = {
-            "ticker": ticker,
-            "price": price_data.get("current_price", None),
-            "volume": price_data.get("volume", None),
-            "avg_volume": price_data.get("avg_volume", None),
-            "high_52w": price_data.get("high_52w", None),
-            "low_52w": price_data.get("low_52w", None),
-            "company_name": info.get("shortName", "Unknown"),
-            "sector": info.get("sector", "Unknown"),
-            "industry": info.get("industry", "Unknown"),
-            "market_cap": info.get("marketCap", None),
-            "pe_ratio": info.get("trailingPE", None),
-            "eps": info.get("trailingEps", None),
-            "dividend_yield": info.get("dividendYield", None),
-            "beta": info.get("beta", None),
-            "description": info.get("longBusinessSummary", None),
-        }
+        # --- 3. NEW METRICS --- 
+        financials_data = {}
+        balance_sheet_data = {}
+        cashflow_data = {}
+        insider_tx_summary = {}
+
+        # Fetch Financials (Income Statement - TTM)
+        try:
+            # Using .financials often gives TTM automatically
+            financials = stock.financials 
+            if not financials.empty:
+                latest_financials = financials.iloc[:, 0] # Assuming latest TTM is first column
+                revenue = latest_financials.get('Total Revenue')
+                gross_profit = latest_financials.get('Gross Profit')
+                net_income = latest_financials.get('Net Income') # Check exact name if error
+                
+                # Calculate Gross Margin if not already found in info
+                if revenue and gross_profit is not None:
+                    financials_data['gross_margin_pct'] = (gross_profit / revenue) * 100 if revenue != 0 else 0
+                
+                # Calculate Profit Margin if not found in info
+                if stock_data.get('profit_margin_pct') is None and revenue and net_income is not None:
+                     financials_data['profit_margin_pct'] = (net_income / revenue) * 100 if revenue != 0 else 0
+                
+                stock_data.update(financials_data)
+
+        except Exception as e:
+            logger.warning(f"Could not get financials for {ticker}: {e}")
+
+        # Fetch Balance Sheet (Most Recent Quarter)
+        try:
+            balance_sheet = stock.balance_sheet
+            if not balance_sheet.empty:
+                latest_bs = balance_sheet.iloc[:, 0]
+                # Find Total Debt (can be under different names)
+                total_debt = latest_bs.get('Total Debt')
+                if total_debt is None:
+                     total_debt = latest_bs.get('Total Liab') # Fallback, less accurate
+                
+                total_equity = latest_bs.get('Stockholders Equity') # Or 'Total Stockholder Equity'
+                balance_sheet_data['cash'] = latest_bs.get('Cash And Cash Equivalents') # Or similar name
+                
+                # Calculate Debt-to-Equity
+                if total_equity and total_equity != 0 and total_debt is not None:
+                    balance_sheet_data['debt_to_equity'] = total_debt / total_equity
+                else:
+                     balance_sheet_data['debt_to_equity'] = None
+                
+                stock_data.update(balance_sheet_data)
+        except Exception as e:
+            logger.warning(f"Could not get balance sheet for {ticker}: {e}")
+
+        # Fetch Cash Flow (TTM) & Calculate Runway
+        try:
+            cashflow = stock.cashflow
+            if not cashflow.empty and 'Free Cash Flow' in cashflow.index:
+                # Sum last 4 quarters for TTM (assuming quarterly data in columns)
+                # Or just use the first column if .cashflow provides TTM directly
+                ttm_fcf = cashflow.loc['Free Cash Flow'].iloc[:, 0] if not cashflow.loc['Free Cash Flow'].iloc[:, 0:4].empty else None # Safer: check shape
+                #ttm_fcf = cashflow.loc['Free Cash Flow'].sum() # If columns are quarters
+
+                burn_rate_annual = None
+                if ttm_fcf is not None and ttm_fcf < 0:
+                    burn_rate_annual = abs(ttm_fcf)
+
+                current_cash = stock_data.get('cash') # Get from previously fetched BS data
+                if burn_rate_annual and current_cash:
+                     cashflow_data['cash_runway_years'] = current_cash / burn_rate_annual
+                elif current_cash is not None and ttm_fcf is not None and ttm_fcf >= 0:
+                     cashflow_data['cash_runway_years'] = float('inf') # Positive cash flow
+                else:
+                     cashflow_data['cash_runway_years'] = None
+                stock_data.update(cashflow_data)
+            else:
+                 logger.debug(f"No Free Cash Flow data found for {ticker} in cashflow statement.")
+                 stock_data['cash_runway_years'] = None
+
+        except Exception as e:
+            logger.warning(f"Could not get cash flow or calculate runway for {ticker}: {e}")
+            stock_data['cash_runway_years'] = None
+
+        # Fetch Insider Transactions (Recent Buys)
+        try:
+            insider_tx = stock.insiderTransactions
+            if insider_tx is not None and not insider_tx.empty:
+                six_months_ago = pd.Timestamp.now() - pd.DateOffset(months=6)
+                 # Ensure 'Start Date' is datetime
+                insider_tx['Start Date'] = pd.to_datetime(insider_tx['Start Date'])
+                
+                # Check if 'Shares' column exists before filtering
+                if 'Shares' in insider_tx.columns:
+                    recent_purchases = insider_tx[
+                        (insider_tx['Start Date'] >= six_months_ago) & 
+                        (insider_tx['Shares'] > 0)
+                    ]
+                    insider_tx_summary['recent_insider_buys_count'] = len(recent_purchases)
+                    insider_tx_summary['recent_insider_net_shares'] = recent_purchases['Shares'].sum()
+                else:
+                    logger.debug(f"'Shares' column not found in insider transactions for {ticker}")
+                    insider_tx_summary['recent_insider_buys_count'] = 0
+                    insider_tx_summary['recent_insider_net_shares'] = 0
+            else:
+                 insider_tx_summary['recent_insider_buys_count'] = 0
+                 insider_tx_summary['recent_insider_net_shares'] = 0
+            stock_data.update(insider_tx_summary)
+        except Exception as e:
+            logger.warning(f"Could not get insider transactions for {ticker}: {e}")
+            stock_data['recent_insider_buys_count'] = None
+            stock_data['recent_insider_net_shares'] = None
+
+        # Fetch Institutional Ownership (If not found in info)
+        if stock_data.get('institutional_ownership_pct') is None:
+            try:
+                inst_holders = stock.institutionalHolders
+                if inst_holders is not None and not inst_holders.empty and '% Out' in inst_holders.columns:
+                    # Attempt to sum the '% Out' column, converting errors to NaN
+                    ownership_pct = pd.to_numeric(inst_holders['% Out'], errors='coerce').sum()
+                    if pd.notna(ownership_pct):
+                        stock_data['institutional_ownership_pct'] = ownership_pct * 100
+            except Exception as e:
+                logger.warning(f"Could not get institutional ownership details for {ticker}: {e}")
+
+        # --- END NEW METRICS --- 
+
+        # Final check for essential data like price
+        if stock_data.get("price") is None:
+             logger.warning(f"No valid current price found for {ticker}. Skipping score calculation potentially.")
+             # Optionally return an error dict or None if price is critical
+             # return {"error": f"No valid price for {ticker}"} 
+
+        # Remove None values before returning? Optional.
+        # stock_data = {k: v for k, v in stock_data.items() if v is not None}
 
         return stock_data
+        
     except RequestException as e:
         logger.error(f"Network error fetching data for {ticker}: {e}")
-        raise e
+        raise e # Reraise network errors for retry logic
     except Exception as e:
         logger.error(f"Unexpected error fetching data for {ticker}: {e}")
-        return {"error": f"Unexpected error fetching data for {ticker}: {e}"}
+        return {"error": f"Unexpected error fetching data for {ticker}: {e}"} 
 
 
 @lru_cache(maxsize=128)

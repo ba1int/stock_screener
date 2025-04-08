@@ -24,14 +24,13 @@ def escape_markdown(text: str) -> str:
     """
     Escapes special characters for Telegram Markdown (basic version).
 
-    Handles characters like *, _, `, [, ], (, ), -, ., !
+    Handles characters like _, *, `, and [
     Note: This is for the 'Markdown' parse mode, not 'MarkdownV2'.
     """
     if not isinstance(text, str):
         return ""
-    # Characters to escape for basic Markdown mode
-    # Adjust this list based on observed errors
-    escape_chars = r'([\_*`\(\)\-\.\[\]!])'
+    # Only escape specific characters required for basic Markdown
+    escape_chars = r'([_*`\[])' # Escape _, *, `, and [
     return re.sub(escape_chars, r'\\\1', text)
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))

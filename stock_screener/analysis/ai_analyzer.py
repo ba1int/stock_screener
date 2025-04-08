@@ -24,7 +24,7 @@ MODEL_NAME = os.getenv("LOCAL_LLM", "llama3:latest")
 
 def format_stock_data(stock: Dict[str, Any]) -> str:
     """
-    Format stock data for Llama analysis.
+    Format stock data for Llama analysis, including enhanced metrics.
 
     Args:
         stock: Stock data dictionary
@@ -50,6 +50,16 @@ def format_stock_data(stock: Dict[str, Any]) -> str:
         dividend_yield = stock.get("dividend_yield", "N/A")
         description = stock.get("description", "N/A")
 
+        # --- New Metrics ---
+        debt_to_equity = stock.get('debt_to_equity', 'N/A')
+        gross_margin_pct = stock.get('gross_margin_pct', 'N/A')
+        profit_margin_pct = stock.get('profit_margin_pct', 'N/A')
+        cash_runway_years = stock.get('cash_runway_years', 'N/A')
+        insider_buys_count = stock.get('recent_insider_buys_count', 'N/A')
+        insider_net_shares = stock.get('recent_insider_net_shares', 'N/A')
+        institutional_ownership_pct = stock.get('institutional_ownership_pct', 'N/A')
+        # --- End New Metrics ---
+
         # Format options metrics if available
         options_metrics_str = "No options data available."
         options_metrics = stock.get("options_metrics")
@@ -57,8 +67,13 @@ def format_stock_data(stock: Dict[str, Any]) -> str:
             pc_vol = options_metrics.get("pc_volume_ratio", "N/A")
             pc_oi = options_metrics.get("pc_oi_ratio", "N/A")
             avg_iv = options_metrics.get("average_iv", "N/A")
-            if avg_iv != "N/A":
-                avg_iv = f"{avg_iv * 100:.1f}%"  # Format IV as percentage
+            if avg_iv != "N/A": # Check if avg_iv is not 'N/A' before formatting
+                 avg_iv_num = options_metrics.get("average_iv") # Get raw number for comparison
+                 if isinstance(avg_iv_num, (int, float)): 
+                     avg_iv = f"{avg_iv_num * 100:.1f}%"  # Format IV as percentage
+                 else:
+                     avg_iv = 'N/A' # Handle case where it might be None or other type
+            
             options_metrics_str = (
                 f"Put/Call Vol Ratio: {pc_vol}, "
                 f"Put/Call OI Ratio: {pc_oi}, "
@@ -73,20 +88,37 @@ def format_stock_data(stock: Dict[str, Any]) -> str:
                 market_cap = f"${market_cap/1_000_000:.2f}M"
             else:
                 market_cap = f"${market_cap:,.0f}"
-        elif isinstance(volume, (int, float)):
+        if isinstance(volume, (int, float)):
             volume = f"{volume:,.0f}"
-        elif isinstance(avg_volume, (int, float)):
+        if isinstance(avg_volume, (int, float)):
             avg_volume = f"{avg_volume:,.0f}"
-        elif isinstance(pe_ratio, (int, float)):
+        if isinstance(pe_ratio, (int, float)):
             pe_ratio = f"{pe_ratio:.2f}"
-        elif isinstance(eps, (int, float)):
+        if isinstance(eps, (int, float)):
             eps = f"{eps:.2f}"
-        elif isinstance(beta, (int, float)):
+        if isinstance(beta, (int, float)):
             beta = f"{beta:.2f}"
-        elif isinstance(dividend_yield, (int, float)):
+        if isinstance(dividend_yield, (int, float)):
             dividend_yield = f"{dividend_yield:.2f}%"
+        # --- Format New Metrics ---
+        if isinstance(debt_to_equity, (int, float)):
+             debt_to_equity = f"{debt_to_equity:.2f}"
+        if isinstance(gross_margin_pct, (int, float)):
+            gross_margin_pct = f"{gross_margin_pct:.1f}%"
+        if isinstance(profit_margin_pct, (int, float)):
+            profit_margin_pct = f"{profit_margin_pct:.1f}%"
+        if isinstance(cash_runway_years, (int, float)):
+            if cash_runway_years == float('inf'):
+                cash_runway_years = "Positive Cash Flow"
+            else:
+                cash_runway_years = f"{cash_runway_years:.1f} years"
+        if isinstance(insider_net_shares, (int, float)):
+            insider_net_shares = f"{insider_net_shares:,.0f}"
+        if isinstance(institutional_ownership_pct, (int, float)):
+            institutional_ownership_pct = f"{institutional_ownership_pct:.1f}%"
+        # --- End Format New Metrics ---
 
-        # Construct the formatted string
+        # Construct the formatted string with new sections
         data_str = f"""
 Ticker: {ticker} ({company_name})
 Sector: {sector} | Industry: {industry}
@@ -100,12 +132,23 @@ Dividend Yield: {dividend_yield}
 Beta (Volatility): {beta}
 52-Week Range: {low_52w} - {high_52w}
 
+Balance Sheet & Margins:
+Debt/Equity Ratio: {debt_to_equity}
+Gross Margin: {gross_margin_pct}
+Profit Margin: {profit_margin_pct}
+Cash Runway: {cash_runway_years}
+Institutional Ownership: {institutional_ownership_pct}
+
 Volume:
 Today's Volume: {volume}
 Average Volume: {avg_volume}
 
 Options Sentiment:
 {options_metrics_str}
+
+Insider Activity (Last 6 Mo):
+Recent Buys Count: {insider_buys_count}
+Net Shares Purchased: {insider_net_shares}
 
 Company Description:
 {description}
@@ -135,27 +178,23 @@ def generate_analysis(stock_data_str: str, ticker: str) -> str:
     logger.info(f"Generating analysis for {ticker}")
 
     try:
-        # Create a more concise prompt for Llama
+        # Updated prompt to mention new metrics
         prompt = f"""Analyze this stock based on the provided data:
 
 {stock_data_str}
 
 Provide a CONCISE investment analysis including:
 1. Technical Analysis: Key price levels and volume trends (2-3 bullet points)
-2. Fundamental Analysis: Current valuation (P/E, EPS, market cap)
-   and growth outlook (2-3 bullet points)
-3. Risk Assessment: Major risks to be aware of (2-3 bullet points)
-4. Recommendation: Clear buy/hold/sell stance with brief rationale
-5. Price Target: Short-term and long-term targets if applicable
+2. Fundamental Analysis: Consider valuation (P/E, EPS, market cap), balance sheet health (Debt/Equity, Cash Runway), margins, and growth outlook (2-3 bullet points)
+3. Risk Assessment: Major risks including financial health and market factors (2-3 bullet points)
+4. Sentiment Check: Incorporate implications from Options Sentiment and Insider Activity.
+5. Recommendation: Clear buy/hold/sell stance with brief rationale.
+6. Price Target: Short-term and long-term targets if applicable.
 
-Note: Focus on the data available - don't analyze metrics not provided
-(e.g., revenue growth, profit margin).
+Note: Focus on the data available. Mention if key data points (like runway or margins) are missing or N/A.
 
 IMPORTANT: Be extremely concise. Use short sentences. Avoid lengthy explanations.
 Max 400 words.
-
-CRITICAL: Analyze the provided Options Sentiment data (Put/Call Ratios, Avg IV)
-and incorporate its implications into your overall analysis and recommendation.
 """
 
         # Call Llama through Ollama API
@@ -272,7 +311,7 @@ def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
         markdown_content = "# Penny Stocks Analysis\n\n"
         # Escape timestamp for Telegram summary header
         escaped_timestamp = escape_markdown(timestamp)
-        telegram_summary = f"*Penny Stocks Analysis \- {escaped_timestamp}*\n\n"
+        telegram_summary = f"*Penny Stocks Analysis - {escaped_timestamp}*\n\n"
         telegram_summary += f"Found {len(stocks)} stocks matching criteria:\n\n"
 
         for stock in stocks:
@@ -310,7 +349,7 @@ def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
 
             # Add concise info to Telegram summary
             # Note: We keep the '*' for bolding the ticker, but escape the ticker itself
-            telegram_summary += f"\- *{escaped_ticker}*: {escaped_recommendation}\n"
+            telegram_summary += f"- *{escaped_ticker}*: {escaped_recommendation}\n"
 
 
         # --- Send Telegram Notification ---
