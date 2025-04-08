@@ -121,45 +121,62 @@ def save_selected_tickers(tickers_data):
         return None
 
 
-def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
+def save_investment_summary(top_stocks: List[Dict[str, Any]], file_prefix: str) -> None:
     """Create a markdown summary of top investment candidates.
 
     Args:
         top_stocks: List of stock dictionaries including score and analysis.
+        file_prefix: Prefix for the output file (e.g., "penny_stocks", "normal_stocks").
     """
+    if not top_stocks:
+        logger.warning("No stocks provided to create investment summary.")
+        return
+        
     date_str = datetime.now().strftime("%Y-%m-%d")
-    summary_file = (
-        Path("stock_screener/data/results") /
-        f"investment_summary_{date_str}.md"
-    )
+    # Use the file_prefix in the filename
+    summary_filename = f"investment_summary_{file_prefix}_{date_str}.md"
+    summary_file = settings.RESULTS_DIR / summary_filename 
 
     try:
         # Ensure the directory exists
         summary_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Determine a user-friendly title based on prefix
+        summary_title = "Investment Opportunities Summary"
+        if "penny" in file_prefix:
+            summary_title = "Penny Stock Investment Opportunities Summary"
+        elif "normal" in file_prefix:
+            summary_title = "Normal Stock Investment Opportunities Summary"
+
         with open(summary_file, "w") as f:
-            # Write header
-            f.write(f"# Investment Opportunities Summary - {date_str}\n\n")
+            # Write header using the determined title
+            f.write(f"# {summary_title} - {date_str}\n\n")
 
             # Write overview
             f.write("## Overview\n")
             overview = (
                 f"Analysis of top {len(top_stocks)} investment candidates "
-                "based on our screening criteria.\n\n"
+                f"from the {file_prefix.replace('_', ' ')} screener based on selection criteria.\n\n"
             )
             f.write(overview)
 
             # Write each stock's summary
             for stock in top_stocks:
+                # Determine score display - only show score for penny stocks
+                score_display = f" (Score: {stock.get('score'):.1f})" if "penny" in file_prefix and stock.get('score') is not None else ""
                 f.write(
-                    f"## {stock['ticker']} (Score: {stock.get('score', 'N/A')})\n\n"
+                    f"## {stock['ticker']}{score_display}\n\n"
                 )
 
                 # Basic info
                 f.write("### Company Information\n")
-                f.write(f"- **Price:** ${stock.get('price', 'N/A')}\n")
+                # Format price directly
+                price = stock.get('price', 'N/A')
+                if isinstance(price, (int, float)):
+                    price = f"${price:.2f}"
+                f.write(f"- **Price:** {price}\n")
 
-                # Handle different formats for market cap
+                # Handle different formats for market cap (same logic as before)
                 market_cap = stock.get("market_cap", "N/A")
                 if isinstance(market_cap, (int, float)) and market_cap > 0:
                     if market_cap >= 1_000_000_000:
@@ -219,9 +236,8 @@ def save_investment_summary(top_stocks: List[Dict[str, Any]]) -> None:
                 # Analysis
                 f.write("### AI Analysis\n")
                 if "analysis" in stock:
-                    f.write("```\n")
-                    f.write(stock["analysis"])
-                    f.write("\n```\n")
+                    # Use markdown code block for analysis
+                    f.write(f"```markdown\n{stock['analysis']}\n```\n") 
                 else:
                     f.write("No analysis available.\n")
                 f.write("\n---\n\n")

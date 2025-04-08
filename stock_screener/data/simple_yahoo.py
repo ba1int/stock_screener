@@ -18,6 +18,8 @@ from ..config import settings
 from datetime import datetime
 import pandas as pd
 import pandas_ta as ta
+import numpy as np
+import stock_screener.config.settings as settings # Ensure settings is imported
 
 # Configure logging
 logging.basicConfig(
@@ -121,11 +123,33 @@ PENNY_STOCKS_LIST = list(
     )
 )  # Use set to remove duplicates
 
+# Example list of 'normal' stocks (non-penny)
+NORMAL_STOCKS_LIST = list(
+    set([
+        # Large Cap Tech
+        "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
+        # Large Cap Finance
+        "JPM", "BAC", "WFC", "GS", "MS",
+        # Large Cap Healthcare
+        "JNJ", "PFE", "UNH", "MRK", "LLY",
+        # Large Cap Consumer Goods
+        "PG", "KO", "PEP", "COST", "WMT",
+        # Large Cap Industrials
+        "HON", "BA", "CAT", "GE",
+        # Large Cap Energy
+        "XOM", "CVX",
+        # Popular ETFs
+        "SPY", "QQQ", "VOO", "VTI", "ARKK",
+        # Other popular stocks
+        "DIS", "NFLX", "PYPL", "SQ", "AMD"
+    ])
+)
 
-def get_penny_stocks() -> List[str]:
-    """Get a list of penny stocks."""
-    logger.info("Starting penny stock screening")
-    penny_stocks = []
+
+def get_potential_penny_stocks() -> List[str]: # Renamed from get_penny_stocks
+    """Get a list of potential penny stocks based on a predefined list and price < $5."""
+    logger.info("Starting potential penny stock identification")
+    potential_stocks = []
 
     # Use our expanded predefined list
     for i, ticker in enumerate(PENNY_STOCKS_LIST):
@@ -135,7 +159,7 @@ def get_penny_stocks() -> List[str]:
                 time.sleep(0.5)
 
             # Get stock info
-            logger.info(f"Checking {ticker}...")
+            logger.info(f"Checking {ticker} for penny stock potential...")
             stock = yf.Ticker(ticker)
 
             try:
@@ -143,17 +167,56 @@ def get_penny_stocks() -> List[str]:
                 hist = stock.history(period="1d")
                 if not hist.empty:
                     price = hist["Close"].iloc[-1]
-                    if price < 5:
-                        penny_stocks.append(ticker)
-                        logger.info(f"Added penny stock: {ticker} (${price:.2f})")
+                    # Use PRICE_MAX from settings
+                    if 0 < price < settings.PRICE_MAX:
+                        potential_stocks.append(ticker)
+                        logger.info(f"Identified potential penny stock: {ticker} (${price:.2f})")
             except Exception as e:
-                logger.warning(f"Error getting history for {ticker}: {e}")
+                # Don't log error if it's a known delisted symbol pattern
+                if "No data found, symbol may be delisted" not in str(e):
+                     logger.warning(f"Error getting history for {ticker}: {e}")
 
         except Exception as e:
             logger.warning(f"Error processing {ticker}: {e}")
 
-    logger.info(f"Found {len(penny_stocks)} penny stocks")
-    return penny_stocks
+    logger.info(f"Found {len(potential_stocks)} potential penny stocks")
+    return potential_stocks
+
+
+def get_potential_normal_stocks() -> List[str]:
+    """Get a list of potential normal stocks based on a predefined list and price >= NORMAL_STOCK_PRICE_MIN."""
+    logger.info("Starting potential normal stock identification")
+    potential_stocks = []
+
+    # Use our normal stock list
+    for i, ticker in enumerate(NORMAL_STOCKS_LIST):
+        try:
+            # Add delay every 3 requests
+            if i > 0 and i % 3 == 0:
+                time.sleep(0.5)
+
+            # Get stock info
+            logger.info(f"Checking {ticker} for normal stock potential...")
+            stock = yf.Ticker(ticker)
+
+            try:
+                # Try to get the current price
+                hist = stock.history(period="1d")
+                if not hist.empty:
+                    price = hist["Close"].iloc[-1]
+                    # Use NORMAL_STOCK_PRICE_MIN from settings
+                    if price >= settings.NORMAL_STOCK_PRICE_MIN:
+                        potential_stocks.append(ticker)
+                        logger.info(f"Identified potential normal stock: {ticker} (${price:.2f})")
+            except Exception as e:
+                if "No data found, symbol may be delisted" not in str(e):
+                     logger.warning(f"Error getting history for {ticker}: {e}")
+
+        except Exception as e:
+            logger.warning(f"Error processing {ticker}: {e}")
+
+    logger.info(f"Found {len(potential_stocks)} potential normal stocks")
+    return potential_stocks
 
 
 @lru_cache(maxsize=256)
@@ -169,7 +232,7 @@ def get_stock_data(ticker: str) -> Dict[str, Any]:
     try:
         stock = yf.Ticker(ticker)
 
-        # 1. Get basic info (already present)
+        # 1. Get basic info (ensure Beta is always present, even if None)
         info = {}
         try:
             info = stock.info
@@ -181,17 +244,18 @@ def get_stock_data(ticker: str) -> Dict[str, Any]:
                 "pe_ratio": info.get("trailingPE", None),
                 "eps": info.get("trailingEps", None),
                 "dividend_yield": info.get("dividendYield", None),
-                "beta": info.get("beta", None),
+                "beta": info.get("beta", None), # Explicitly add beta, even if None
                 "description": info.get("longBusinessSummary", None),
-                # Use institutional ownership from info if available (more reliable)
                 "institutional_ownership_pct": info.get("heldPercentInstitutions", None) * 100 if info.get("heldPercentInstitutions") else None,
-                # Use profit margin from info if available
                 "profit_margin_pct": info.get("profitMargins", None) * 100 if info.get("profitMargins") else None,
             })
         except Exception as e:
             logger.warning(f"Could not get info for {ticker}: {e}")
+            # Ensure beta is still added if info fetch fails but Ticker object exists
+            if 'beta' not in stock_data:
+                 stock_data['beta'] = None
 
-        # 2. Get recent price data and calculate TA
+        # 2. Get recent price data and calculate TA & Risk Metrics
         price_data = {}
         hist = None # Initialize hist
         try:
@@ -205,91 +269,119 @@ def get_stock_data(ticker: str) -> Dict[str, Any]:
                     "low_52w": hist["Low"].min(),
                     "avg_volume": hist["Volume"].mean(),
                 }
-                stock_data.update(price_data) # Update with basic price info first
+                stock_data.update(price_data)
+
+                # Calculate Avg Dollar Volume
+                if price_data.get('avg_volume') and price_data.get('price'):
+                    avg_price_period = hist['Close'].mean()
+                    stock_data['avg_dollar_volume'] = price_data['avg_volume'] * avg_price_period
+                else:
+                    stock_data['avg_dollar_volume'] = None
 
                 # Calculate technical indicators using pandas_ta
-                if len(hist) > 200: # Need enough data for SMAs/MACD
-                    try: # Inner try-except for TA calculations
-                         # Calculate SMAs
+                if len(hist) > 200: # Need enough data
+                    ta_indicators = {} # Initialize dict for TA results
+                    try: 
+                         # --- Core TA Calculations --- 
                          hist.ta.sma(length=20, append=True)
                          hist.ta.sma(length=50, append=True)
                          hist.ta.sma(length=200, append=True)
-                         
-                         # Calculate RSI
                          hist.ta.rsi(length=14, append=True)
-                         
-                         # Calculate MACD
                          hist.ta.macd(fast=12, slow=26, signal=9, append=True)
+                         hist.ta.atr(length=settings.ATR_PERIOD, append=True)
                          
-                         # Add latest TA values to stock_data
+                         # --- Extract Core TA Values Immediately --- 
                          latest_ta = hist.iloc[-1]
-                         ta_indicators = {
-                             'rsi_14': latest_ta.get('RSI_14'),
-                             'macd_line': latest_ta.get('MACD_12_26_9'),
-                             'macd_signal': latest_ta.get('MACDs_12_26_9'),
-                             'macd_hist': latest_ta.get('MACDh_12_26_9'),
-                             'sma_20': latest_ta.get('SMA_20'),
-                             'sma_50': latest_ta.get('SMA_50'),
-                             'sma_200': latest_ta.get('SMA_200')
-                         }
-                         
-                         # --- Analyze TA Relationships --- 
+                         ta_indicators['sma_20'] = latest_ta.get('SMA_20')
+                         ta_indicators['sma_50'] = latest_ta.get('SMA_50')
+                         ta_indicators['sma_200'] = latest_ta.get('SMA_200')
+                         ta_indicators['rsi_14'] = latest_ta.get('RSI_14')
+                         ta_indicators['macd_line'] = latest_ta.get('MACD_12_26_9')
+                         ta_indicators['macd_signal'] = latest_ta.get('MACDs_12_26_9')
+                         ta_indicators['macd_hist'] = latest_ta.get('MACDh_12_26_9')
+                         ta_indicators['atr_14'] = latest_ta.get(f'ATRr_{settings.ATR_PERIOD}')
+
+                         # --- Calculate Historical Volatility --- 
+                         hist['log_return'] = np.log(hist['Close'] / hist['Close'].shift(1))
+                         hist['volatility_60d'] = hist['log_return'].rolling(window=60).std() * np.sqrt(252)
+                         ta_indicators['hist_volatility_60d_annualized'] = hist['volatility_60d'].iloc[-1] * 100 if 'volatility_60d' in hist.columns else None
+
+                         # --- Analyze TA Relationships & Other Metrics (using extracted values) --- 
                          current_price = latest_ta['Close']
                          sma20 = ta_indicators.get('sma_20')
                          sma50 = ta_indicators.get('sma_50')
                          sma200 = ta_indicators.get('sma_200')
                          
-                         # Price vs MAs
-                         ta_indicators['price_above_sma20'] = current_price > sma20 if sma20 else None
-                         ta_indicators['price_above_sma50'] = current_price > sma50 if sma50 else None
-                         ta_indicators['price_above_sma200'] = current_price > sma200 if sma200 else None
+                         ta_indicators['price_above_sma20'] = current_price > sma20 if sma20 is not None else None
+                         ta_indicators['price_above_sma50'] = current_price > sma50 if sma50 is not None else None
+                         ta_indicators['price_above_sma200'] = current_price > sma200 if sma200 is not None else None
+                         ta_indicators['sma50_above_sma200'] = sma50 > sma200 if sma50 is not None and sma200 is not None else None
                          
-                         # MA vs MA
-                         ta_indicators['sma50_above_sma200'] = sma50 > sma200 if sma50 and sma200 else None
-                         
-                         # Recent Crossovers (check last 5 days)
+                         # Recent Crossovers
                          recent_hist = hist.iloc[-5:]
-                         ta_indicators['recent_golden_cross'] = (
-                             (recent_hist['SMA_50'] > recent_hist['SMA_200']) & 
-                             (recent_hist['SMA_50'].shift(1) < recent_hist['SMA_200'].shift(1))
-                         ).any() if 'SMA_50' in recent_hist.columns and 'SMA_200' in recent_hist.columns else False
-                         
-                         ta_indicators['recent_death_cross'] = (
-                             (recent_hist['SMA_50'] < recent_hist['SMA_200']) & 
-                             (recent_hist['SMA_50'].shift(1) > recent_hist['SMA_200'].shift(1))
-                         ).any() if 'SMA_50' in recent_hist.columns and 'SMA_200' in recent_hist.columns else False
-                         
-                         # --- Support/Resistance/Breakout --- 
+                         if 'SMA_50' in recent_hist.columns and 'SMA_200' in recent_hist.columns:
+                             ta_indicators['recent_golden_cross'] = ((recent_hist['SMA_50'] > recent_hist['SMA_200']) & (recent_hist['SMA_50'].shift(1) < recent_hist['SMA_200'].shift(1))).any()
+                             ta_indicators['recent_death_cross'] = ((recent_hist['SMA_50'] < recent_hist['SMA_200']) & (recent_hist['SMA_50'].shift(1) > recent_hist['SMA_200'].shift(1))).any()
+                         else:
+                             ta_indicators['recent_golden_cross'] = False
+                             ta_indicators['recent_death_cross'] = False
+
+                         # Support/Resistance/Breakout
                          low_52w = stock_data.get('low_52w')
                          high_52w = stock_data.get('high_52w')
                          ta_indicators['pct_off_52w_low'] = ((current_price / low_52w) - 1) * 100 if low_52w and low_52w != 0 else None
                          ta_indicators['pct_off_52w_high'] = (1 - (current_price / high_52w)) * 100 if high_52w and high_52w != 0 else None
-                         ta_indicators['near_52w_low'] = ta_indicators['pct_off_52w_low'] is not None and ta_indicators['pct_off_52w_low'] <= 10 # Within 10% of low
-                         ta_indicators['near_52w_high'] = ta_indicators['pct_off_52w_high'] is not None and ta_indicators['pct_off_52w_high'] <= 10 # Within 10% of high
+                         ta_indicators['near_52w_low'] = ta_indicators['pct_off_52w_low'] is not None and ta_indicators['pct_off_52w_low'] <= 10
+                         ta_indicators['near_52w_high'] = ta_indicators['pct_off_52w_high'] is not None and ta_indicators['pct_off_52w_high'] <= 10
                          
-                         # Simple Breakout (above 60-day high)
                          recent_high_60d = hist['High'].iloc[-60:].max()
-                         ta_indicators['is_breaking_out_60d'] = current_price > recent_high_60d if recent_high_60d else None
+                         ta_indicators['is_breaking_out_60d'] = current_price > recent_high_60d if not pd.isna(recent_high_60d) else None
                          
-                         # --- Volume Spike --- 
+                         # Volume Spike
                          avg_vol = stock_data.get('avg_volume')
                          current_vol = stock_data.get('volume')
-                         ta_indicators['recent_volume_spike'] = current_vol > (avg_vol * 2.5) if current_vol and avg_vol and avg_vol != 0 else None # e.g., > 2.5x average
+                         ta_indicators['recent_volume_spike'] = current_vol > (avg_vol * 2.5) if current_vol and avg_vol and avg_vol != 0 else None
                          
-                         stock_data.update(ta_indicators) # Update main dict with TA results
+                         # ATR Stop Loss
+                         atr = ta_indicators.get('atr_14')
+                         if atr is not None and current_price is not None:
+                             stop_distance = atr * settings.ATR_STOP_MULTIPLIER
+                             ta_indicators['atr_stop_distance'] = stop_distance
+                             ta_indicators['suggested_stop_price'] = current_price - stop_distance
+                         else:
+                             ta_indicators['atr_stop_distance'] = None
+                             ta_indicators['suggested_stop_price'] = None
+                             
+                         stock_data.update(ta_indicators) # Update main dict with ALL TA results
                          
                     except Exception as ta_err:
-                         logger.warning(f"Error calculating specific TA for {ticker}: {ta_err}")
+                         logger.warning(f"Error calculating TA/Risk metrics for {ticker}: {ta_err}", exc_info=True)
+                         # Ensure core keys exist even if calculation failed mid-way
+                         for core_key in ['sma_20', 'sma_50', 'sma_200', 'rsi_14']:
+                              if core_key not in stock_data: stock_data[core_key] = None
 
                 else:
-                     logger.warning(f"Not enough history data to calculate all TA for {ticker}")
+                     logger.warning(f"Not enough history data (need >200, got {len(hist)}) to calculate TA/Risk metrics for {ticker}")
+                     # Ensure core keys exist if history was too short
+                     for core_key in ['sma_20', 'sma_50', 'sma_200', 'rsi_14', 'hist_volatility_60d_annualized', 'atr_14']:
+                         stock_data[core_key] = None
             else:
                  logger.warning(f"Empty history data for {ticker}")
+                 # Ensure core keys exist if history was empty
+                 for core_key in ['sma_20', 'sma_50', 'sma_200', 'rsi_14', 'hist_volatility_60d_annualized', 'atr_14', 'avg_dollar_volume']:
+                     stock_data[core_key] = None
                  
         except Exception as e:
-            logger.warning(f"Could not get price data or calculate TA for {ticker}: {e}")
+            logger.warning(f"Could not get price data or calculate TA/Risk for {ticker}: {e}", exc_info=True)
+            # Ensure core keys exist if price history fetch failed
+            for core_key in ['sma_20', 'sma_50', 'sma_200', 'rsi_14', 'hist_volatility_60d_annualized', 'atr_14', 'avg_dollar_volume']:
+                 if core_key not in stock_data: stock_data[core_key] = None
 
-        # --- 3. ENHANCED FINANCIAL METRICS --- 
+        # --- Ensure Beta is present if info fetch failed earlier --- 
+        if 'beta' not in stock_data:
+            stock_data['beta'] = None 
+            
+        # --- 3. ENHANCED FINANCIAL METRICS (Keep as is) --- 
         financials_data = {}
         balance_sheet_data = {}
         cashflow_data = {}
@@ -419,17 +511,16 @@ def get_stock_data(ticker: str) -> Dict[str, Any]:
              # Optionally return an error dict or None if price is critical
              # return {"error": f"No valid price for {ticker}"} 
 
-        # Remove None values before returning? Optional.
-        # stock_data = {k: v for k, v in stock_data.items() if v is not None}
-
-        return stock_data
-        
-    except RequestException as e:
-        logger.error(f"Network error fetching data for {ticker}: {e}")
-        raise e # Reraise network errors for retry logic
+        # Final check: replace any NaN values potentially introduced
+        for key, value in stock_data.items():
+             if isinstance(value, float) and np.isnan(value):
+                  stock_data[key] = None
+                  
     except Exception as e:
-        logger.error(f"Unexpected error fetching data for {ticker}: {e}")
-        return {"error": f"Unexpected error fetching data for {ticker}: {e}"} 
+        logger.error(f"Major error getting data for {ticker}: {e}", exc_info=True)
+        stock_data["error"] = str(e)
+
+    return stock_data
 
 
 @lru_cache(maxsize=128)

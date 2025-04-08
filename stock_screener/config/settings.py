@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import logging
 
 # Set up logging
+# logging.basicConfig(level=logging.DEBUG) # Changed back to INFO
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,11 @@ PRICE_MAX = 5.0  # Maximum price for penny stocks
 MARKET_CAP_MIN = 25000000  # Minimum $25M market cap
 MARKET_CAP_MAX = 2000000000  # Maximum $2B market cap
 
+# --- Normal Stock Specific Filters ---
+NORMAL_STOCK_PRICE_MIN = 5.0  # Minimum price for normal stocks
+NORMAL_STOCK_MARKET_CAP_MIN = 50000000  # Minimum $50M market cap for normal stocks
+# No explicit MAX Market Cap for normal stocks
+
 # Volume and Liquidity Filters
 VOLUME_MIN = 200000  # Minimum average daily volume
 RELATIVE_VOLUME_MIN = 1.2  # Minimum relative volume
@@ -102,6 +108,12 @@ SMA_FAST = 50
 SMA_SLOW = 200
 VOLUME_MA_PERIOD = 20
 
+# --- Risk Management Settings ---
+MAX_HIST_VOLATILITY_ANNUALIZED = 150.0  # Maximum acceptable annualized volatility (e.g., 150%)
+MIN_AVG_DOLLAR_VOLUME = 200000         # Minimum average daily dollar volume (e.g., $200k)
+ATR_PERIOD = 14                        # Period for ATR calculation
+ATR_STOP_MULTIPLIER = 2.5              # Multiplier for ATR to calculate stop-loss distance
+
 # API Settings
 YAHOO_MAX_RETRIES = int(os.getenv("YAHOO_MAX_RETRIES", 3))
 YAHOO_TIMEOUT = int(os.getenv("YAHOO_TIMEOUT", 10))
@@ -114,10 +126,21 @@ LOG_FORMAT = "[%(levelname)s] %(message)s"
 DEFAULT_FILTERS = {
     "price": {"min": 0.1, "max": 5.0},
     "volume": {"min": 100000},
-    "market_cap": {"min": 50000000},  # $50M minimum market cap
+    "market_cap": {"min": 50000000, "max": 2000000000},  # $50M min, $2B max for penny
     "rsi": {"max": 40},  # Oversold condition
     "sma_50_200_ratio": {"min": 0.8},  # Within 20% of 200-day MA
     "beta": {"min": 1.2},  # Higher volatility
+}
+
+# Default filters for normal stocks
+DEFAULT_FILTERS_NORMAL = {
+    "price": {"min": NORMAL_STOCK_PRICE_MIN}, # Use the defined min price, no max
+    "volume": {"min": 100000}, # Keep same volume min for now
+    "market_cap": {"min": NORMAL_STOCK_MARKET_CAP_MIN}, # Use defined min market cap, no max
+    # Removed unreliable technical filters:
+    # "rsi": {"max": 70},  
+    # "sma_50_200_ratio": {"min": 1.0}, 
+    # "beta": {"max": 2.0}, 
 }
 
 # Analysis settings

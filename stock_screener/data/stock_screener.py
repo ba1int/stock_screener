@@ -6,9 +6,12 @@ import logging
 import time
 from typing import List, Dict, Any
 from .simple_yahoo import (
-    get_penny_stocks,
+    # get_penny_stocks, # This was renamed
+    get_potential_penny_stocks, # Use the renamed function
     get_stock_data,
     get_options_metrics,
+    # get_potential_penny_stocks, # Already imported above
+    get_potential_normal_stocks,
 )
 from ..utils.helpers import save_json # Restore this import
 
@@ -22,6 +25,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import settings for risk filters
+from ..config import settings
 
 def screen_penny_stocks(
     min_score: float = 7.0, max_stocks: int = 20
@@ -48,7 +53,7 @@ def screen_penny_stocks(
         stocks_skipped = 0
         start_time = time.time()
 
-        potential_stocks = get_penny_stocks()
+        potential_stocks = get_potential_penny_stocks()
         logger.info(f"Found {len(potential_stocks)} potential penny stocks to screen")
 
         total_potential = len(potential_stocks)
@@ -65,6 +70,22 @@ def screen_penny_stocks(
                     )
                     stocks_skipped += 1
                     continue
+
+                # --- Apply Risk Filters --- 
+                # Filter by Avg Dollar Volume
+                avg_dollar_vol = stock_data.get('avg_dollar_volume')
+                if avg_dollar_vol is None or avg_dollar_vol < settings.MIN_AVG_DOLLAR_VOLUME:
+                     logger.debug(f"Skipping {ticker}: Avg Dollar Volume {avg_dollar_vol} < {settings.MIN_AVG_DOLLAR_VOLUME}")
+                     stocks_skipped += 1
+                     continue
+                
+                # Filter by Historical Volatility
+                hist_vol = stock_data.get('hist_volatility_60d_annualized')
+                if hist_vol is None or hist_vol > settings.MAX_HIST_VOLATILITY_ANNUALIZED:
+                     logger.debug(f"Skipping {ticker}: Historical Volatility {hist_vol}% > {settings.MAX_HIST_VOLATILITY_ANNUALIZED}%")
+                     stocks_skipped += 1
+                     continue
+                # --------------------------
 
                 # Calculate score based on financial metrics
                 score = calculate_stock_score(stock_data)
@@ -269,3 +290,164 @@ def get_potential_picks(
     except Exception as e:
         logger.error(f"Error in get_potential_picks: {str(e)}")
         return []
+
+# Helper function to check against a filter dictionary
+def _passes_filters(stock_data: Dict[str, Any], filter_config: Dict[str, Dict[str, float]]) -> bool:
+    """Checks if stock data passes the given filter configuration."""
+    ticker = stock_data.get('ticker', 'Unknown')
+    for key, conditions in filter_config.items():
+        value = stock_data.get(key)
+        
+        # Handle special calculated keys first
+        if key == "sma_50_200_ratio":
+            sma50 = stock_data.get("sma_50")
+            sma200 = stock_data.get("sma_200")
+            if sma50 is None or sma200 is None or sma200 == 0:
+                 logger.debug(f"Skipping {ticker} on filter '{key}': Missing SMA values")
+                 return False # Fail if SMAs needed for ratio are missing
+            value = sma50 / sma200 # Calculate the value on the fly
+        
+        # Check general conditions after potential calculation
+        if value is None:
+            # If a filter requires a value that's missing (and wasn't calculated), it fails
+            logger.debug(f"Skipping {ticker} on filter '{key}': Missing value")
+            return False
+
+        if "min" in conditions and value < conditions["min"]:
+            logger.debug(f"Skipping {ticker} on filter '{key}': {value:.2f} < {conditions['min']}")
+            return False
+        if "max" in conditions and value > conditions["max"]:
+            logger.debug(f"Skipping {ticker} on filter '{key}': {value:.2f} > {conditions['max']}")
+            return False
+
+    return True
+
+def screen_normal_stocks(
+    max_stocks: int = 20
+) -> List[Dict[str, Any]]:
+    """
+    Screen normal (non-penny) stocks using data from Yahoo Finance.
+    Filters based on criteria in settings.DEFAULT_FILTERS_NORMAL and risk settings.
+    Returns a list of screened stocks.
+
+    Args:
+        max_stocks: Maximum number of stocks to return
+
+    Returns:
+        List of stock dictionaries that meet the criteria
+    """
+    if not isinstance(max_stocks, int) or max_stocks <= 0:
+        raise ValueError("max_stocks must be a positive integer")
+
+    try:
+        logger.info(f"Starting normal stock screening process (max_stocks={max_stocks})...")
+
+        screened_stocks = []
+        stocks_processed_count = 0
+        stocks_skipped_count = 0
+        start_time = time.time()
+
+        potential_stocks = get_potential_normal_stocks()
+        logger.info(f"Found {len(potential_stocks)} potential normal stocks to screen")
+
+        total_potential = len(potential_stocks)
+
+        for ticker in potential_stocks:
+            stocks_processed_count += 1
+            try:
+                stock_data = get_stock_data(ticker)
+                if not stock_data or stock_data.get("error"):
+                    logger.warning(
+                        f"Skipping {ticker}: No data or error "
+                        f"({stock_data.get('error')})"
+                    )
+                    stocks_skipped_count += 1
+                    continue
+
+                # --- Apply Risk Filters --- 
+                avg_dollar_vol = stock_data.get('avg_dollar_volume')
+                if avg_dollar_vol is None or avg_dollar_vol < settings.MIN_AVG_DOLLAR_VOLUME:
+                     logger.debug(f"Skipping {ticker}: Avg Dollar Volume {avg_dollar_vol} < {settings.MIN_AVG_DOLLAR_VOLUME}")
+                     stocks_skipped_count += 1
+                     continue
+                
+                hist_vol = stock_data.get('hist_volatility_60d_annualized')
+                if hist_vol is None or hist_vol > settings.MAX_HIST_VOLATILITY_ANNUALIZED:
+                     logger.debug(f"Skipping {ticker}: Historical Volatility {hist_vol}% > {settings.MAX_HIST_VOLATILITY_ANNUALIZED}%")
+                     stocks_skipped_count += 1
+                     continue
+                # --------------------------
+
+                # --- Apply Default Normal Filters --- 
+                # Need SMA data for sma_50_200_ratio filter - ensure it's calculated in get_stock_data
+                # The _passes_filters function now handles the ratio calculation if SMAs exist.
+                if not _passes_filters(stock_data, settings.DEFAULT_FILTERS_NORMAL):
+                    # Debug logging can be added inside _passes_filters if needed
+                    stocks_skipped_count += 1
+                    continue
+                # ------------------------------------
+                
+                # If passed all filters, add to list
+                screened_stocks.append(stock_data)
+                
+                # Stop if we have enough stocks
+                if len(screened_stocks) >= max_stocks:
+                    logger.info(f"Reached max_stocks ({max_stocks}), stopping screening early.")
+                    # Process remaining stocks to update skipped count correctly
+                    stocks_skipped_count += (total_potential - stocks_processed_count)
+                    break 
+
+                # Log progress periodically
+                if stocks_processed_count % 5 == 0:
+                    logger.info(
+                        f"Processed {stocks_processed_count}/{total_potential} stocks..."
+                    )
+
+            except Exception as e:
+                logger.error(f"Error processing ticker {ticker}: {e}", exc_info=True)
+                stocks_skipped_count += 1
+        
+        # No sorting by score needed here, selection is based on passing filters
+        top_stocks = screened_stocks # Already limited by max_stocks check
+        logger.info(f"Selected {len(top_stocks)} stocks meeting normal criteria.")
+
+        # --- Fetch Options Metrics ONLY for Selected Stocks --- #
+        if top_stocks:
+            logger.info(f"Fetching options metrics for {len(top_stocks)} selected stocks...")
+            for stock in top_stocks:
+                ticker = stock.get("ticker")
+                if ticker:
+                    try:
+                        stock["options_metrics"] = get_options_metrics(ticker)
+                        time.sleep(0.3)  # Small delay between requests
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to get options metrics for selected stock {ticker}: {e}"
+                        )
+                        stock["options_metrics"] = {
+                            "error": "Error fetching options metrics."
+                        }
+                else:
+                    stock["options_metrics"] = {
+                        "error": "Ticker not found for options fetching."
+                    }
+        # ------------------------------------------ #
+
+        elapsed_time = time.time() - start_time
+        logger.info(
+            f"Normal stock screening complete. Found {len(top_stocks)} matching stocks, "
+            f"skipped {stocks_skipped_count}. Time: {elapsed_time:.2f}s"
+        )
+
+        # Save results with a different filename prefix
+        save_json("selected_tickers_normal", top_stocks, logger)
+
+        return top_stocks
+
+    except Exception as e:
+        logger.error(f"Error in screen_normal_stocks: {str(e)}")
+        return []
+
+# ... existing calculate_stock_score, validate_screening_params, etc. ...
+
+   
