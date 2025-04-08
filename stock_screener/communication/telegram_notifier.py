@@ -1,6 +1,7 @@
 import os
 import telegram
 import asyncio
+import re # Import re for escaping
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_fixed
 
@@ -19,6 +20,20 @@ if not TELEGRAM_CHAT_ID:
 # Initialize the bot
 bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 
+def escape_markdown(text: str) -> str:
+    """
+    Escapes special characters for Telegram Markdown (basic version).
+
+    Handles characters like *, _, `, [, ], (, ), -, ., !
+    Note: This is for the 'Markdown' parse mode, not 'MarkdownV2'.
+    """
+    if not isinstance(text, str):
+        return ""
+    # Characters to escape for basic Markdown mode
+    # Adjust this list based on observed errors
+    escape_chars = r'([\_*`\(\)\-\.\[\]!])'
+    return re.sub(escape_chars, r'\\\1', text)
+
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 async def send_telegram_message(message: str):
     """
@@ -26,7 +41,7 @@ async def send_telegram_message(message: str):
     Retries up to 3 times with a 2-second delay if sending fails.
 
     Args:
-        message: The text message to send.
+        message: The text message to send (should be pre-escaped if needed).
     """
     if not message or not isinstance(message, str):
         print("Error: Invalid message content.")
@@ -42,7 +57,11 @@ async def send_telegram_message(message: str):
 
 # Example usage (for testing purposes)
 async def main():
-    await send_telegram_message("Hello from the Stock Screener!\n\n*This* is a test message.")
+    test_msg = "Hello from the Stock Screener!\n\n*This* is a test message with _special_ chars like [link](url) and `code` and - . !"
+    escaped_msg = escape_markdown(test_msg)
+    print(f"Original: {test_msg}")
+    print(f"Escaped: {escaped_msg}")
+    await send_telegram_message(escaped_msg)
 
 if __name__ == "__main__":
     # Ensure you have an event loop running if calling from a script

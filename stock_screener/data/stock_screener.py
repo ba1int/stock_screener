@@ -10,10 +10,11 @@ from .simple_yahoo import (
     get_stock_data,
     get_options_metrics,
 )
+from ..utils.helpers import save_json # Restore this import
 
 # from .newsapi_fetcher import get_stock_news # Keep this if you want
 # NewsAPI as primary/fallback
-from ..utils.helpers import save_json  # Import save_json
+# from ..utils.helpers import save_json # Import save_json # Removed unused news saving
 
 # Set up logging directly instead of using the helper
 logging.basicConfig(

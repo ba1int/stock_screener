@@ -12,7 +12,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import asyncio  # Add asyncio import
 from ..config import settings
 from ..config.settings import RESULTS_DIR
-from ..communication.telegram_notifier import send_telegram_message # Import telegram function
+from ..communication.telegram_notifier import send_telegram_message, escape_markdown # Import telegram function AND the escaping helper
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -270,7 +270,9 @@ def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
         filename = RESULTS_DIR / f"penny_stocks_analysis_{timestamp}.md"
 
         markdown_content = "# Penny Stocks Analysis\n\n"
-        telegram_summary = f"*Penny Stocks Analysis - {timestamp}*\n\n"
+        # Escape timestamp for Telegram summary header
+        escaped_timestamp = escape_markdown(timestamp)
+        telegram_summary = f"*Penny Stocks Analysis \- {escaped_timestamp}*\n\n"
         telegram_summary += f"Found {len(stocks)} stocks matching criteria:\n\n"
 
         for stock in stocks:
@@ -302,8 +304,13 @@ def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
 
             markdown_content += f"{ticker_display}\n\n{analysis}\n\n---\n\n"
 
+            # Escape ticker and recommendation for Telegram summary
+            escaped_ticker = escape_markdown(ticker)
+            escaped_recommendation = escape_markdown(recommendation)
+
             # Add concise info to Telegram summary
-            telegram_summary += f"- *{ticker}*: {recommendation}\n"
+            # Note: We keep the '*' for bolding the ticker, but escape the ticker itself
+            telegram_summary += f"\- *{escaped_ticker}*: {escaped_recommendation}\n"
 
 
         # --- Send Telegram Notification ---

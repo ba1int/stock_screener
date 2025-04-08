@@ -95,45 +95,6 @@ def run_stock_screening():
         logger.info(f"Saved {len(results)} screened stocks to {result_file}")
 
 
-def run_news_fetching():
-    """Run just the news fetching component."""
-    from stock_screener.data.newsapi_fetcher import get_stock_news
-
-    # Use a sample set of tickers
-    sample_tickers = ["AAPL", "MSFT", "AMZN", "GOOGL", "META"]
-
-    logger.info(
-        f"Running news fetching component with {len(sample_tickers)} sample tickers..."
-    )
-
-    # Get news for each ticker
-    news_data = {}
-    for ticker in sample_tickers:
-        logger.info(f"Fetching news for {ticker}...")
-
-        try:
-            news = get_stock_news(ticker)
-            news_data[ticker] = news
-        except Exception as e:
-            logger.error(f"Error fetching news for {ticker}: {e}")
-
-    # Save news data to a file
-    if news_data:
-        import json
-
-        results_dir = Path("component_results")
-        results_dir.mkdir(exist_ok=True)
-
-        date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result_file = results_dir / f"news_data_{date_str}.json"
-
-        # Save the news data
-        with open(result_file, "w") as f:
-            json.dump(news_data, f, indent=2)
-
-        logger.info(f"Saved news data for {len(news_data)} tickers to {result_file}")
-
-
 def run_ai_analysis():
     """Run just the AI analysis component with sample data."""
     from stock_screener.analysis.ai_analyzer import analyze_stocks
@@ -196,9 +157,6 @@ def parse_args():
         "--screen", action="store_true", help="Run stock screening component"
     )
     parser.add_argument(
-        "--news", action="store_true", help="Run news fetching component"
-    )
-    parser.add_argument(
         "--analyze", action="store_true", help="Run only the AI analysis component"
     )
 
@@ -209,9 +167,9 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Check if any flags were provided
-    if not (args.fetch or args.screen or args.news or args.analyze):
+    if not (args.fetch or args.screen or args.analyze):
         logger.error(
-            "No components specified. Use --fetch, --screen, --news, or --analyze"
+            "No components specified. Use --fetch, --screen, or --analyze"
         )
         sys.exit(1)
 
@@ -224,9 +182,6 @@ if __name__ == "__main__":
 
     if args.screen:
         run_stock_screening()
-
-    if args.news:
-        run_news_fetching()
 
     if args.analyze:
         run_ai_analysis()

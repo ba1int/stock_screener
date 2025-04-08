@@ -24,11 +24,6 @@ if not env_path.exists():
 load_dotenv(dotenv_path=env_path)
 logger.info("Loaded .env file successfully")
 
-NEWS_API_KEY = os.environ.get("NEWS_API_KEY")  # Use environ.get instead of getenv
-if not NEWS_API_KEY:
-    logger.error("News API key not found in environment variables")
-    raise ValueError("News API key not found in environment variables")
-
 # File paths
 DATA_DIR = Path(__file__).parent.parent / "data"
 RESULTS_DIR = DATA_DIR / "results"
@@ -135,7 +130,4 @@ RSI_PERIOD = 14
 SMA_PERIODS = [20, 50, 200]
 VOLUME_MA_PERIOD = 20
 
-# News API Settings
-NEWS_CACHE_DURATION = 1800  # Cache news data for 30 minutes
-MAX_NEWS_ARTICLES = 5  # Maximum number of news articles per stock
-NEWS_LOOKBACK_DAYS = 7  # Look back this many days for news
+# News API Settings removed
