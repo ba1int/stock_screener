@@ -3,20 +3,23 @@ Module for AI-powered stock analysis using Ollama with Llama 3.2 3B.
 """
 
 import logging
+import os
 import requests
 from datetime import datetime
 from functools import lru_cache
 from typing import List, Dict, Any
 from tenacity import retry, stop_after_attempt, wait_exponential
+import asyncio  # Add asyncio import
 from ..config import settings
 from ..config.settings import RESULTS_DIR
+from ..communication.telegram_notifier import send_telegram_message # Import telegram function
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Ollama API settings
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama3:latest"
+MODEL_NAME = os.getenv("LOCAL_LLM", "llama3:latest")
 
 
 def format_stock_data(stock: Dict[str, Any]) -> str:
@@ -116,7 +119,7 @@ Company Description:
 
 @lru_cache(maxsize=128)
 @retry(
-    stop=stop_after_attempt(settings.OPENAI_MAX_RETRIES),
+    stop=stop_after_attempt(3),  # Default to 3 retries for LLM
     wait=wait_exponential(multiplier=1, min=2, max=10),
 )
 def generate_analysis(stock_data_str: str, ticker: str) -> str:
@@ -253,7 +256,7 @@ def analyze_stocks(stocks: List[Dict[str, Any]]) -> None:
 
 def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
     """
-    Save stock analyses to a markdown file.
+    Save stock analyses to a markdown file and send a summary via Telegram.
 
     Args:
         stocks: List of analyzed stock data dictionaries
@@ -266,20 +269,62 @@ def save_analyses_to_file(stocks: List[Dict[str, Any]]) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d")
         filename = RESULTS_DIR / f"penny_stocks_analysis_{timestamp}.md"
 
+        markdown_content = "# Penny Stocks Analysis\n\n"
+        telegram_summary = f"*Penny Stocks Analysis - {timestamp}*\n\n"
+        telegram_summary += f"Found {len(stocks)} stocks matching criteria:\n\n"
+
+        for stock in stocks:
+            ticker = stock.get("ticker", "unknown")
+            company_name = stock.get("company_name", "")
+            analysis = stock.get("analysis", "No analysis available.")
+            recommendation = "Recommendation: Not Found"  # Default
+
+            # Improved recommendation extraction
+            lines = analysis.split('\n')
+            try:
+                # Find the index of the line containing "Recommendation", case-insensitive
+                idx = next(i for i, line in enumerate(lines) if "recommendation" in line.lower())
+                # Find the next non-empty line after the header
+                recommendation_line = next((lines[j].strip() for j in range(idx + 1, len(lines)) if lines[j].strip()), None)
+                if recommendation_line:
+                    # Prepend with 'Recommendation:' for consistency if not already present
+                    if not recommendation_line.lower().startswith("recommendation"):
+                         recommendation = f"Recommendation: {recommendation_line}"
+                    else:
+                         recommendation = recommendation_line # Use the line as is if it starts with it
+            except StopIteration:
+                # Keep the default if "recommendation" line is not found or no line follows
+                pass
+
+            ticker_display = f"## {ticker}"
+            if company_name:
+                ticker_display += f" - {company_name}"
+
+            markdown_content += f"{ticker_display}\n\n{analysis}\n\n---\n\n"
+
+            # Add concise info to Telegram summary
+            telegram_summary += f"- *{ticker}*: {recommendation}\n"
+
+
+        # --- Send Telegram Notification ---
+        try:
+            # We need to run the async function. Use asyncio.run()
+            # Ensure message length is within Telegram limits (4096 chars)
+            max_len = 4000 # Leave some buffer
+            if len(telegram_summary) > max_len:
+                telegram_summary = telegram_summary[:max_len] + "... (truncated)"
+
+            logger.info("Sending analysis summary via Telegram...")
+            asyncio.run(send_telegram_message(telegram_summary))
+            logger.info("Telegram notification sent successfully.")
+        except Exception as telegram_err:
+            logger.error(f"Failed to send Telegram notification: {telegram_err}")
+        # ---------------------------------
+
+
         # Write analyses to file
         with open(filename, "w") as f:
-            f.write("# Penny Stocks Analysis\n\n")
-            for stock in stocks:
-                ticker = stock.get("ticker", "unknown")
-                company_name = stock.get("company_name", "")
-                analysis = stock.get("analysis", "No analysis available.")
-
-                f.write(f"## {ticker}")
-                if company_name:
-                    f.write(f" - {company_name}")
-                f.write("\n\n")
-                f.write(analysis)
-                f.write("\n\n---\n\n")
+            f.write(markdown_content) # Write the full markdown content
 
         logger.info(f"Analyses saved to {filename}")
 

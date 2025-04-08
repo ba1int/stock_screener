@@ -28,9 +28,19 @@ def screen_penny_stocks(
     """
     Screen penny stocks using data from Yahoo Finance.
     Returns a list of screened stocks.
+
+    Args:
+        min_score: Minimum score threshold (0-10)
+        max_stocks: Maximum number of stocks to return
+
+    Returns:
+        List of stock dictionaries that meet the criteria
     """
+    # Validate input parameters
+    validate_screening_params(min_score, max_stocks)
+
     try:
-        logger.info("Starting penny stock screening process...")
+        logger.info(f"Starting penny stock screening process (min_score={min_score}, max_stocks={max_stocks})...")
 
         screened_stocks = []
         stocks_processed = 0
@@ -126,6 +136,7 @@ def calculate_stock_score(stock_data: Dict[str, Any]) -> float:
     """Calculate a comprehensive score for a stock based on multiple criteria."""
     try:
         score = 0
+        ticker = stock_data.get('ticker', 'unknown')
 
         # Basic validation
         if not stock_data or not isinstance(stock_data, dict):
@@ -133,93 +144,79 @@ def calculate_stock_score(stock_data: Dict[str, Any]) -> float:
             return 0
 
         # --- Scoring Criteria --- #
+        from ..config.settings import (
+            SCORE_WEIGHTS, PRICE_SCORE_THRESHOLDS,
+            VOLUME_RATIO_THRESHOLDS, PE_RATIO_THRESHOLD,
+            OPTIONS_RATIO_THRESHOLDS
+        )
 
-        # Price (under $5 for penny stocks) - Max 15 points
+        # Price scoring
         price = stock_data.get("price")
         if price is not None:
-            if price < 1:
-                score += 15
-            elif price < 3:
-                score += 10
-            elif price < 5:
-                score += 5
+            if price < PRICE_SCORE_THRESHOLDS["HIGH"]["threshold"]:
+                score += PRICE_SCORE_THRESHOLDS["HIGH"]["points"]
+            elif price < PRICE_SCORE_THRESHOLDS["MEDIUM"]["threshold"]:
+                score += PRICE_SCORE_THRESHOLDS["MEDIUM"]["points"]
+            elif price < PRICE_SCORE_THRESHOLDS["LOW"]["threshold"]:
+                score += PRICE_SCORE_THRESHOLDS["LOW"]["points"]
         else:
-            logger.debug(f"No price for {stock_data.get('ticker')} scoring")
+            logger.debug(f"No price for {ticker} scoring")
 
-        # Volume vs Average Volume - Max 15 points
+        # Volume vs Average Volume scoring
         volume = stock_data.get("volume")
         avg_volume = stock_data.get("avg_volume")
-        if (
-            volume is not None and avg_volume is not None and avg_volume > 10000
-        ):  # Ensure avg_volume is meaningful
+        if volume is not None and avg_volume is not None and avg_volume > 10000:
             try:
                 vol_ratio = volume / avg_volume
-                if vol_ratio > 2:
-                    score += 15
-                elif vol_ratio > 1.5:
-                    score += 10
-                elif vol_ratio > 1:
-                    score += 5
+                if vol_ratio > VOLUME_RATIO_THRESHOLDS["HIGH"]["threshold"]:
+                    score += VOLUME_RATIO_THRESHOLDS["HIGH"]["points"]
+                elif vol_ratio > VOLUME_RATIO_THRESHOLDS["MEDIUM"]["threshold"]:
+                    score += VOLUME_RATIO_THRESHOLDS["MEDIUM"]["points"]
+                elif vol_ratio > VOLUME_RATIO_THRESHOLDS["LOW"]["threshold"]:
+                    score += VOLUME_RATIO_THRESHOLDS["LOW"]["points"]
             except ZeroDivisionError:
-                logger.debug(f"Zero avg volume for {stock_data.get('ticker')}")
+                logger.debug(f"Zero avg volume for {ticker}")
         else:
-            logger.debug(
-                f"Insufficient volume data for {stock_data.get('ticker')} scoring"
-            )
+            logger.debug(f"Insufficient volume data for {ticker} scoring")
 
-        # P/E Ratio (Value) - Max 10 points (Adjusted scoring)
-        pe = stock_data.get("pe_ratio")  # Assuming 'pe_ratio' from get_stock_data
+        # P/E Ratio scoring
+        pe = stock_data.get("pe_ratio")
         if pe is not None and pe > 0:
-            if pe < 10:
-                score += 10
-            elif pe < 15:
-                score += 5
+            if pe < PE_RATIO_THRESHOLD:
+                score += SCORE_WEIGHTS["PE_SCORE"]
         else:
-            logger.debug(f"No P/E for {stock_data.get('ticker')} scoring")
+            logger.debug(f"No P/E for {ticker} scoring")
 
-        # Options Sentiment (Put/Call Ratios) - Max 10 points, Min -5
+        # Options Sentiment scoring
         options_metrics = stock_data.get("options_metrics")
         if options_metrics and not options_metrics.get("error"):
             pc_oi_ratio = options_metrics.get("pc_oi_ratio")
             pc_vol_ratio = options_metrics.get("pc_volume_ratio")
-
-            # Use OI ratio primarily, fallback to Volume ratio if OI is missing
             ratio_to_use = pc_oi_ratio if pc_oi_ratio is not None else pc_vol_ratio
 
             if ratio_to_use is not None:
-                if ratio_to_use < 0.7:
-                    score += 10  # Bullish
-                elif ratio_to_use < 0.9:
-                    score += 5  # Slightly Bullish / Neutral
-                elif ratio_to_use > 1.2:
-                    score -= 5  # Bearish
-                # Ratios between 0.9 and 1.2 are considered neutral
-                ticker = stock_data.get("ticker")
+                if ratio_to_use < OPTIONS_RATIO_THRESHOLDS["BULLISH"]["threshold"]:
+                    score += OPTIONS_RATIO_THRESHOLDS["BULLISH"]["points"]
+                elif ratio_to_use < OPTIONS_RATIO_THRESHOLDS["NEUTRAL"]["threshold"]:
+                    score += OPTIONS_RATIO_THRESHOLDS["NEUTRAL"]["points"]
+                elif ratio_to_use > OPTIONS_RATIO_THRESHOLDS["BEARISH"]["threshold"]:
+                    score += OPTIONS_RATIO_THRESHOLDS["BEARISH"]["points"]
                 ratio_str = f"{ratio_to_use:.2f}"
                 logger.debug(f"Options ratio score: {ticker} Ratio={ratio_str}")
             else:
-                logger.debug(f"No usable P/C ratio for {stock_data.get('ticker')}")
+                logger.debug(f"No usable P/C ratio for {ticker}")
         else:
-            logger.debug(f"No options metrics for {stock_data.get('ticker')}")
-
-        # Consider adding more criteria (e.g., EPS growth, Beta, Sector trends, IV
-        # level)
+            logger.debug(f"No options metrics for {ticker}")
 
         # --- Normalization --- #
-        # Max possible points: Price(15) + Volume(15) + PE(10) + Options(10) = 50
-        max_score_used = 15 + 15 + 10 + 10  # Update this if criteria change
-
-        if max_score_used == 0:
-            return 0  # Avoid division by zero
-
-        normalized_score = (score / max_score_used) * 10
+        max_possible_score = sum(SCORE_WEIGHTS.values())
+        normalized_score = (score / max_possible_score) * 10 if max_possible_score > 0 else 0
 
         logger.debug(
-            f"Score for {stock_data.get('ticker')}: "
-            f"Raw={score}, Norm={normalized_score:.2f}"
+            f"Score for {ticker}: Raw={score}, Norm={normalized_score:.2f}"
         )
 
-        return round(normalized_score, 2)  # Return score out of 10
+        return round(normalized_score, 2)
 
     except Exception as e:
         logger.error(
@@ -228,6 +225,17 @@ def calculate_stock_score(stock_data: Dict[str, Any]) -> float:
         )
         return 0
 
+
+def validate_screening_params(min_score: float, max_stocks: int) -> None:
+    """Validate stock screening parameters."""
+    if not isinstance(min_score, (int, float)):
+        raise ValueError("min_score must be a number")
+    if not isinstance(max_stocks, int):
+        raise ValueError("max_stocks must be an integer")
+    if min_score < 0 or min_score > 10:
+        raise ValueError("min_score must be between 0 and 10")
+    if max_stocks < 1:
+        raise ValueError("max_stocks must be greater than 0")
 
 def get_potential_picks(
     min_score: float = 7.0, max_stocks: int = 20
@@ -241,5 +249,22 @@ def get_potential_picks(
     Returns:
         A list of stocks that meet the criteria.
     """
-    # Implementation of get_potential_picks method
-    pass
+    logger.info("Starting potential picks analysis...")
+    
+    # Validate input parameters
+    validate_screening_params(min_score, max_stocks)
+    
+    try:
+        # Use the existing screen_penny_stocks function
+        screened_stocks = screen_penny_stocks(min_score, max_stocks)
+        
+        if not screened_stocks:
+            logger.warning("No stocks met the screening criteria")
+            return []
+            
+        logger.info(f"Found {len(screened_stocks)} potential picks")
+        return screened_stocks
+        
+    except Exception as e:
+        logger.error(f"Error in get_potential_picks: {str(e)}")
+        return []

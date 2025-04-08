@@ -5,4 +5,5 @@ python-dotenv>=1.0.0
 requests>=2.31.0
 black>=24.0.0
 flake8>=7.0.0
-tenacity>=8.2.0 
+tenacity>=8.2.0
+python-telegram-bot 

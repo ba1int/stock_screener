@@ -24,14 +24,6 @@ if not env_path.exists():
 load_dotenv(dotenv_path=env_path)
 logger.info("Loaded .env file successfully")
 
-# API Keys with validation
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")  # Use environ.get instead of getenv
-logger.info(f"OpenAI API Key found: {'Yes' if OPENAI_API_KEY else 'No'}")
-
-if not OPENAI_API_KEY:
-    logger.error("OpenAI API key not found in environment variables")
-    raise ValueError("OpenAI API key not found in environment variables")
-
 NEWS_API_KEY = os.environ.get("NEWS_API_KEY")  # Use environ.get instead of getenv
 if not NEWS_API_KEY:
     logger.error("News API key not found in environment variables")
@@ -44,6 +36,33 @@ RESULTS_DIR = DATA_DIR / "results"
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
+
+# Scoring Settings
+SCORE_WEIGHTS = {
+    "PRICE_SCORE": 15,      # Max points for price criteria
+    "VOLUME_SCORE": 15,     # Max points for volume criteria
+    "PE_SCORE": 10,        # Max points for P/E ratio
+    "OPTIONS_SCORE": 10     # Max points for options sentiment
+}
+
+PRICE_SCORE_THRESHOLDS = {
+    "HIGH": {"threshold": 1, "points": 15},
+    "MEDIUM": {"threshold": 3, "points": 10},
+    "LOW": {"threshold": 5, "points": 5}
+}
+
+VOLUME_RATIO_THRESHOLDS = {
+    "HIGH": {"threshold": 2, "points": 15},
+    "MEDIUM": {"threshold": 1.5, "points": 10},
+    "LOW": {"threshold": 1, "points": 5}
+}
+
+PE_RATIO_THRESHOLD = 10  # Threshold for P/E ratio scoring
+OPTIONS_RATIO_THRESHOLDS = {
+    "BULLISH": {"threshold": 0.7, "points": 10},
+    "NEUTRAL": {"threshold": 0.9, "points": 5},
+    "BEARISH": {"threshold": 1.2, "points": -5}
+}
 
 # Price and Market Cap Filters
 PRICE_MIN = 0.50  # Minimum price to avoid extreme delisting risk
