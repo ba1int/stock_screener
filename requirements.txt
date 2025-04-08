@@ -1,9 +1,10 @@
 yfinance>=0.2.55
 pandas>=2.0.0
-numpy>=1.24.0
+numpy~=1.26.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 black>=24.0.0
 flake8>=7.0.0
 tenacity>=8.2.0
-python-telegram-bot 
+python-telegram-bot
+pandas-ta 

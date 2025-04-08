@@ -17,6 +17,7 @@ from requests.exceptions import RequestException
 from ..config import settings
 from datetime import datetime
 import pandas as pd
+import pandas_ta as ta
 
 # Configure logging
 logging.basicConfig(
@@ -190,11 +191,13 @@ def get_stock_data(ticker: str) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Could not get info for {ticker}: {e}")
 
-        # 2. Get recent price data (already present)
+        # 2. Get recent price data and calculate TA
         price_data = {}
+        hist = None # Initialize hist
         try:
             hist = stock.history(period="1y") # Fetches daily data for 1 year
             if not hist.empty:
+                # Basic price data
                 price_data = {
                     "price": hist["Close"].iloc[-1],
                     "volume": hist["Volume"].iloc[-1],
@@ -202,13 +205,91 @@ def get_stock_data(ticker: str) -> Dict[str, Any]:
                     "low_52w": hist["Low"].min(),
                     "avg_volume": hist["Volume"].mean(),
                 }
-                stock_data.update(price_data)
-            else:
-                logger.warning(f"Empty history data for {ticker}")
-        except Exception as e:
-            logger.warning(f"Could not get price data for {ticker}: {e}")
+                stock_data.update(price_data) # Update with basic price info first
 
-        # --- 3. NEW METRICS --- 
+                # Calculate technical indicators using pandas_ta
+                if len(hist) > 200: # Need enough data for SMAs/MACD
+                    try: # Inner try-except for TA calculations
+                         # Calculate SMAs
+                         hist.ta.sma(length=20, append=True)
+                         hist.ta.sma(length=50, append=True)
+                         hist.ta.sma(length=200, append=True)
+                         
+                         # Calculate RSI
+                         hist.ta.rsi(length=14, append=True)
+                         
+                         # Calculate MACD
+                         hist.ta.macd(fast=12, slow=26, signal=9, append=True)
+                         
+                         # Add latest TA values to stock_data
+                         latest_ta = hist.iloc[-1]
+                         ta_indicators = {
+                             'rsi_14': latest_ta.get('RSI_14'),
+                             'macd_line': latest_ta.get('MACD_12_26_9'),
+                             'macd_signal': latest_ta.get('MACDs_12_26_9'),
+                             'macd_hist': latest_ta.get('MACDh_12_26_9'),
+                             'sma_20': latest_ta.get('SMA_20'),
+                             'sma_50': latest_ta.get('SMA_50'),
+                             'sma_200': latest_ta.get('SMA_200')
+                         }
+                         
+                         # --- Analyze TA Relationships --- 
+                         current_price = latest_ta['Close']
+                         sma20 = ta_indicators.get('sma_20')
+                         sma50 = ta_indicators.get('sma_50')
+                         sma200 = ta_indicators.get('sma_200')
+                         
+                         # Price vs MAs
+                         ta_indicators['price_above_sma20'] = current_price > sma20 if sma20 else None
+                         ta_indicators['price_above_sma50'] = current_price > sma50 if sma50 else None
+                         ta_indicators['price_above_sma200'] = current_price > sma200 if sma200 else None
+                         
+                         # MA vs MA
+                         ta_indicators['sma50_above_sma200'] = sma50 > sma200 if sma50 and sma200 else None
+                         
+                         # Recent Crossovers (check last 5 days)
+                         recent_hist = hist.iloc[-5:]
+                         ta_indicators['recent_golden_cross'] = (
+                             (recent_hist['SMA_50'] > recent_hist['SMA_200']) & 
+                             (recent_hist['SMA_50'].shift(1) < recent_hist['SMA_200'].shift(1))
+                         ).any() if 'SMA_50' in recent_hist.columns and 'SMA_200' in recent_hist.columns else False
+                         
+                         ta_indicators['recent_death_cross'] = (
+                             (recent_hist['SMA_50'] < recent_hist['SMA_200']) & 
+                             (recent_hist['SMA_50'].shift(1) > recent_hist['SMA_200'].shift(1))
+                         ).any() if 'SMA_50' in recent_hist.columns and 'SMA_200' in recent_hist.columns else False
+                         
+                         # --- Support/Resistance/Breakout --- 
+                         low_52w = stock_data.get('low_52w')
+                         high_52w = stock_data.get('high_52w')
+                         ta_indicators['pct_off_52w_low'] = ((current_price / low_52w) - 1) * 100 if low_52w and low_52w != 0 else None
+                         ta_indicators['pct_off_52w_high'] = (1 - (current_price / high_52w)) * 100 if high_52w and high_52w != 0 else None
+                         ta_indicators['near_52w_low'] = ta_indicators['pct_off_52w_low'] is not None and ta_indicators['pct_off_52w_low'] <= 10 # Within 10% of low
+                         ta_indicators['near_52w_high'] = ta_indicators['pct_off_52w_high'] is not None and ta_indicators['pct_off_52w_high'] <= 10 # Within 10% of high
+                         
+                         # Simple Breakout (above 60-day high)
+                         recent_high_60d = hist['High'].iloc[-60:].max()
+                         ta_indicators['is_breaking_out_60d'] = current_price > recent_high_60d if recent_high_60d else None
+                         
+                         # --- Volume Spike --- 
+                         avg_vol = stock_data.get('avg_volume')
+                         current_vol = stock_data.get('volume')
+                         ta_indicators['recent_volume_spike'] = current_vol > (avg_vol * 2.5) if current_vol and avg_vol and avg_vol != 0 else None # e.g., > 2.5x average
+                         
+                         stock_data.update(ta_indicators) # Update main dict with TA results
+                         
+                    except Exception as ta_err:
+                         logger.warning(f"Error calculating specific TA for {ticker}: {ta_err}")
+
+                else:
+                     logger.warning(f"Not enough history data to calculate all TA for {ticker}")
+            else:
+                 logger.warning(f"Empty history data for {ticker}")
+                 
+        except Exception as e:
+            logger.warning(f"Could not get price data or calculate TA for {ticker}: {e}")
+
+        # --- 3. ENHANCED FINANCIAL METRICS --- 
         financials_data = {}
         balance_sheet_data = {}
         cashflow_data = {}

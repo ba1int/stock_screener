@@ -61,7 +61,9 @@ def save_json(filename_prefix: str, data: Any, logger: logging.Logger) -> None:
 
     def convert_numpy_types(obj):
         """Recursively convert numpy types to standard Python types."""
-        if isinstance(obj, np.integer):
+        if isinstance(obj, np.bool_):
+             return bool(obj) # Convert numpy bool to python bool
+        elif isinstance(obj, np.integer):
             return int(obj)
         elif isinstance(obj, np.floating):
             # Handle potential NaN/Inf values
@@ -76,6 +78,9 @@ def save_json(filename_prefix: str, data: Any, logger: logging.Logger) -> None:
             return {k: convert_numpy_types(v) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [convert_numpy_types(i) for i in obj]
+        # Handle pandas Timestamps if they sneak in
+        elif isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
         return obj
 
     timestamp_str = datetime.now().strftime("%Y-%m-%d")
